@@ -1,0 +1,149 @@
+---
+title: Daily News Briefing
+description: Get AI-powered daily news summaries directly in your Obsidian vault
+sidebar_position: 5
+keywords: [obsidain-plugin, AI, Perplexity, news]
+---
+
+import { CheckIcon } from '@heroicons/react/24/solid'
+import { Callout } from 'nextra/components'
+
+# Daily News Briefing
+
+<div className="flex flex-col sm:flex-row items-start gap-4">
+  <div className="flex-1">
+    <p className="text-lg">
+      Daily News Briefing is an Obsidian plugin that delivers AI-powered news summaries directly to your vault. Stay informed about your topics of interest with smart, automated news collection and summarization.
+    </p>
+    <div className="mt-4 flex flex-wrap gap-2">
+      <a href="https://github.com/ChenziqiAdam/Daily-News-Briefing" target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors">
+        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</div>
+
+## Features
+
+<ul className="mt-8 space-y-4">
+  <li className="flex gap-2">
+    <CheckIcon className="h-6 w-6 flex-none text-green-500" />
+    <span>Personalized news collection based on your topics of interest</span>
+  </li>
+  <li className="flex gap-2">
+    <CheckIcon className="h-6 w-6 flex-none text-green-500" />
+    <span>AI-powered summarization of news articles</span>
+  </li>
+  <li className="flex gap-2">
+    <CheckIcon className="h-6 w-6 flex-none text-green-500" />
+    <span>Automated daily news briefings directly in your Obsidian vault</span>
+  </li>
+  <li className="flex gap-2">
+    <CheckIcon className="h-6 w-6 flex-none text-green-500" />
+    <span>Customizable delivery schedule and format</span>
+  </li>
+  <li className="flex gap-2">
+    <CheckIcon className="h-6 w-6 flex-none text-green-500" />
+    <span>Integration with your existing Obsidian workflow</span>
+  </li>
+</ul>
+
+## Prerequisites
+
+- Obsidian desktop app installed
+- Perplexity API key
+- Internet connection for fetching news articles
+
+## Installation
+
+1. Install the plugin from Obsidian Community Plugins or manually by copying the release files to your Obsidian plugins folder
+2. Enable the plugin in Obsidian settings
+3. Enter your Perplexity API key in the plugin settings
+4. Configure your news topics and delivery preferences
+
+## Built with Perplexity API
+
+<Callout type="info">
+  Daily News Briefing uses the Perplexity Sonar API to deliver high-quality, personalized news summaries. By leveraging Perplexity's advanced capabilities, the plugin can intelligently gather and summarize news from across the web, ensuring you stay informed on the topics that matter most to you.
+</Callout>
+
+## How it works
+
+1. **Configure your interests**: Set up your preferred topics, sources, and delivery schedule in the plugin settings.
+
+2. **Automated collection**: The plugin uses Perplexity Sonar API to search for and gather the latest news articles related to your interests.
+
+3. **AI summarization**: Articles are processed and summarized using Perplexity's advanced natural language capabilities.
+
+4. **Delivery to your vault**: Summaries are formatted and delivered as Markdown notes directly into your Obsidian vault.
+
+5. **Seamless integration**: Link your news briefings with other notes in your knowledge base for a comprehensive information management system.
+
+## Code Explanation
+
+The core functionality of Daily News Briefing relies on the Perplexity Sonar API for gathering and summarizing news. Here's a key code snippet showing how we interact with the API:
+
+```typescript
+async function fetchNewsSummaries(topics: string[]): Promise<NewsSummary[]> {
+  const summaries: NewsSummary[] = [];
+  
+  for (const topic of topics) {
+    try {
+      // Use Perplexity Sonar API to search for recent news
+      const newsQuery = `latest news about ${topic} in the past 24 hours`;
+      const searchResponse = await perplexityClient.search({
+        query: newsQuery,
+        max_results: 5,
+        include_domains: userPreferences.trustedSources || []
+      });
+      
+      // Extract relevant articles
+      const articles = searchResponse.results;
+      
+      // Generate a concise summary using Perplexity
+      const summaryPrompt = `Summarize these news articles about ${topic}: ${articles.map(a => a.title).join(', ')}`;
+      const summaryResponse = await perplexityClient.generate({
+        prompt: summaryPrompt,
+        model: "sonar-medium-online",
+        max_tokens: 500
+      });
+      
+      summaries.push({
+        topic,
+        summary: summaryResponse.text,
+        sources: articles.map(a => ({ title: a.title, url: a.url })),
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error(`Error fetching news for topic ${topic}:`, error);
+    }
+  }
+  
+  return summaries;
+}
+```
+
+## Technical implementation
+
+Daily News Briefing is built with TypeScript and integrates with Obsidian's plugin API. The application architecture includes:
+
+- TypeScript-based plugin structure
+- Custom CSS for styling elements
+- JavaScript utilities
+- Integration with Perplexity Sonar API for AI-powered news gathering and summarization
+
+The plugin demonstrates how Perplexity API can be leveraged to create intelligent content curation tools that integrate with existing productivity systems.
+
+## Limitations
+
+- The quality of summaries depends on the availability of recent news articles
+- API rate limits may affect the number of topics that can be monitored simultaneously
+- Internet connection is required for fetching news updates
+- Some paywalled content may not be fully accessible for summarization
+
+## Links
+
+- [GitHub Repository](https://github.com/ChenziqiAdam/Daily-News-Briefing)
