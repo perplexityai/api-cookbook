@@ -1,0 +1,77 @@
+---
+title: UnCovered | Real-Time Fact-Checking for Text, Images & Screenshots
+description: 2-click truth for anything you see online — text, images, screenshots, and links — without leaving the page.
+sidebar_position: 7
+keywords: [fact-checking, image verification, chrome extension, misinformation, sonar, perplexity, uncovered]
+---
+
+## UnCovered: three clicks, instant truth for anything you see on the we
+
+**UnCovered** is a powerful Chrome extension that verifies **text, images, websites, and screenshots** in real-time—right where you browse. Built on Perplexity’s Sonar API, it provides instant truth with citations, verdicts, and deep analysis using just a right-click.
+
+## Features
+
+- **3-Click Verification**: Select → Right-click → Verify (Text, Image, Link, or Screenshot)
+- **Text Analysis Modes**: Quick Search, Fact-Check, Deep Research
+- **Image Fact-Checking**: Reverse image analysis and multimodal claim verification
+- **Screenshot & Video Frame Capture**: Analyze visuals like infographics, memes, or chart snapshots instantly
+- **Citation-Backed Results**: All answers include sources and fact-verdicts (True/False/Unconfirmed)
+- **Instant Rebuttal Generator**: Create concise, fact-based replies to misinformation
+- **No Tab Switching**: Stay on the same page — no copy-paste, no new tabs
+
+## How it uses Sonar
+
+UnCovered leverages the Perplexity Sonar API in three core modes:
+
+- `sonar-pro`: Powers **Quick Search** and **Fact-Check** for fast, citation-backed answers  
+- `sonar-deep-research`: Used for **in-depth analysis** and **multi-source context**  
+- Input sources include selected text, right-clicked images, URLs, or screenshots captured directly in the browser
+
+Each user interaction is intelligently routed to the appropriate Sonar API mode to ensure high accuracy and minimal latency.
+
+## Usage
+
+1. **Text/Link Verification**
+   - Select text or right-click a link
+   - Choose Quick Search / Fact-Check / Deep Research
+   - Get trusted results with verdicts and citations
+![](https://res.cloudinary.com/dvk80x6fi/image/upload/v1748375032/text-short-MadewithClipchamp-ezgif.com-video-to-gif-converter_gfn4n7.gif)
+
+2. **Image Verification**
+   - Right-click any image
+   - Choose from Quick Search or Fact-Check
+   - Detect misinformation and visual manipulation
+![](https://res.cloudinary.com/dvk80x6fi/image/upload/v1748375032/image-short-final-ezgif.com-video-to-gif-converter_rkvb8r.gif)
+
+3. **Screenshot/Infographic Analysis**
+   - Click UnCovered icon in the toolbar
+   - Use "Capture Screen" to analyze visual content (e.g., memes, videos, infographics)
+![](https://res.cloudinary.com/dvk80x6fi/image/upload/v1748375034/video-short-final-ezgif.com-video-to-gif-converter_nhlydr.gif)
+
+4. **Get Instant Rebuttal**
+   - Auto-generate a short, human-like response you can post to correct misinformation
+
+![Preview](https://res.cloudinary.com/dvk80x6fi/image/upload/v1748276656/final-diagram_zssp87.png)
+
+## Prompt Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `sonar-pro` | Default fast mode | Quick Search & Fact Verdicts |
+| `sonar-deep-research` | Deep multi-source understanding | Thorough claim analysis |
+| Screenshot Upload | Multimodal image understanding | Infographics, memes, video frames |
+
+## Tech Stack
+
+- **Frontend**: Vanilla JavaScript + HTML (Chrome Extension APIs)
+- **Backend**: Node.js + Express
+- **Database**: MongoDB
+- **Auth**: Google OAuth
+- **Cloud Storage**: Cloudinary (for image uploads)
+- **AI Engine**: Perplexity Sonar Pro + Deep Research APIs
+
+## Links
+
+- [GitHub Repository](https://github.com/aayushsingh7/UnCovered)
+- [Live Demo Video](https://youtu.be/WJxW91eu0fs)
+
