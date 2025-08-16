@@ -1,0 +1,64 @@
+---
+| title                         | description                                                                                   | sidebar_position | keywords                                                       |
+|-------------------------------|-----------------------------------------------------------------------------------------------|------------------|----------------------------------------------------------------|
+| Sonar Chromium Browser | Chromium browser with native Perplexity Sonar API integration: omnibox answers & context-menu summarization | 9                | sonar, chromium, omnibox, context-menu, summarize, hackathon, api |
+
+---
+
+## 🚀 Project: Sonar Chromium Browser
+
+**GitHub Repo:** [KoushikBaagh/sonar-chromium-browser](https://github.com/KoushikBaagh/perplexity-hackathon-chromium)
+
+**Chromium Gerrit Repo:** [KoushikBaagh/google-gerrit-repo](https://chromium-review.googlesource.com/c/chromium/src/+/6778540)
+
+### 📖 Project Overview
+
+This Chrome browser patch integrates Perplexity’s Sonar API directly into Chromium, enabling:
+
+- **Omnibox Answers:** Type `sonar your question` in the address bar to get instant AI responses as autocomplete suggestions.
+- **Context-menu Summarization:** Select any text on a page, right-click **Summarize with Sonar**, and view a concise summary in a new tab.
+
+### 🎥 Demonstration Video
+
+[![Watch the demo](https://img.youtube.com/vi/nFhciodeQ-c/0.jpg)](https://youtu.be/nFhciodeQ-c)
+
+### 🔍 What This Does
+
+1. **Sonar-Powered Omnibox Answers**
+
+   - Detects the `sonar` keyword in the omnibox
+   - Debounces input and queries the Sonar API
+   - Renders the AI’s answer inline as a high-relevance suggestion
+
+2. **Context-menu “Summarize with Sonar”**
+   - Activates when text is selected
+   - Sends selection to Sonar API with a “Please summarize” prompt
+   - Opens a new `data:` URL tab showing original text + summary
+
+### 🛠 Key Features & Use Cases
+
+- **Instant Research:** Get definitions, explanations, and summaries without leaving your tab.
+- **Developer Productivity:** Quickly test API integrations inside the browser.
+- **Custom Browser Builds:** See how to hook into Chromium’s omnibox and context menus.
+
+### ⚙️ How It Uses Perplexity Sonar
+
+```js
+// Omnibox query (model=sonar-pro)
+await client.chat.completions.create({
+  model: "sonar-pro",
+  messages: [
+    { role: "system", content: "Be precise and concise." },
+    { role: "user", content: "What is quantum tunneling?" },
+  ],
+});
+
+// Context-menu summarization (model=sonar)
+await client.chat.completions.create({
+  model: "sonar",
+  messages: [
+    { role: "system", content: "Summarize the following text concisely." },
+    { role: "user", content: selectedText },
+  ],
+});
+```
