@@ -1,0 +1,5 @@
+deepagents>=0.0.5
+langchain-core>=0.3.0
+langchain-perplexity>=0.1.0
+langchain-openai>=0.3.0
+perplexityai>=0.6.0
