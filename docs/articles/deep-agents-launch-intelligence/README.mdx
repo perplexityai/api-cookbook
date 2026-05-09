@@ -1,58 +1,62 @@
 ---
 title: Deep Agents Launch Intelligence
-description: Build a LangChain Deep Agent that investigates a product launch end-to-end using Perplexity Search and the langchain-perplexity chat model.
+description: A multi-agent product-launch brief built on the Perplexity Agent API using the Deep Agents pattern (planner + sub-agents + workpapers).
 sidebar_position: 3
-keywords: [langchain, deep-agents, deepagents, perplexity-search, search-api, agents, multi-agent, subagents, virtual-filesystem, workpapers]
+keywords: [agent-api, deep-agents, multi-agent, subagents, web-search, fetch-url, workpapers, pro-search]
 ---
 
 # Deep Agents Launch Intelligence
 
-This guide walks through building a multi-agent **Product Launch Intelligence Agent** on top of [LangChain Deep Agents](https://github.com/langchain-ai/deepagents) and Perplexity. The agent takes a launch topic ("NVIDIA Rubin GPU announcement", "Apple Vision Pro 2", "OpenAI Sora 2 GA") and produces a structured, citation-rich brief covering the official announcement, independent reception, the competitive landscape, and execution risks.
+This guide walks through building a multi-agent **Product Launch Intelligence Agent** entirely on top of the Perplexity [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart). The agent takes a launch topic ("NVIDIA Rubin GPU announcement", "Apple Vision Pro 2", "OpenAI Sora 2 GA") and produces a structured, citation-rich brief covering the official announcement, independent reception, the competitive landscape, and execution risks.
 
-The cookbook is intentionally Perplexity-native:
+The cookbook reproduces the Deep Agents pattern (planner + narrowly-scoped sub-agents + a shared virtual filesystem of workpapers), but every model call is made through the Perplexity Agent API. There is no Sonar chat-completions code path.
 
-- The **Perplexity Search API** (via the `perplexityai` Python SDK) is the only outside-world tool. It returns ranked web results with stable URLs the model can cite verbatim.
-- The chat model is **`langchain-perplexity`** running `sonar-pro`. The integration plugs straight into Deep Agents — no custom adapter required.
-- The orchestrator and sub-agents share a **virtual filesystem of workpapers** so the final report is synthesized from saved evidence, not from the model's parametric memory.
+- Each **sub-agent is a single Agent API call** with the `pro-search` preset and the built-in `web_search` + `fetch_url` tools enabled. The Agent API plans its own tool steps, returns inline citations, and writes its findings as a workpaper.
+- The **orchestrator is a final Agent API call** that synthesizes the four workpapers into the published brief. It runs without web tools, so the brief is grounded strictly in evidence the sub-agents already saved.
+- **Workpapers** (`announcement.md`, `reception.md`, `competitors.md`, `risks.md`, `final_report.md`) are persisted in a Python dict the script passes between stages — the same semantics Deep Agents' virtual filesystem uses.
 
-> This example was inspired by the broader Deep Agents pattern (planner + sub-agents + virtual filesystem) but the scenario, prompts, sub-agent breakdown, and code are written from scratch for a Perplexity stack. Pick a different scenario by swapping the four sub-agent prompts.
+> This example was inspired by the broader Deep Agents pattern (planner + sub-agents + virtual filesystem) but the scenario, prompts, sub-agent breakdown, and code are written from scratch for the Perplexity Agent API. Pick a different scenario by swapping the four sub-agent prompts.
 
 ## 🎯 What you'll build
 
 By the end of this article you will have:
 
-- ✅ A reusable `perplexity_search` tool wrapping the Search API (multi-query, citation-friendly output)
-- ✅ Four narrowly-scoped sub-agents: announcement scout, reception analyst, competitor mapper, risk auditor
-- ✅ An orchestrator that plans, delegates, reads the workpapers, and writes a final report
+- ✅ Four narrowly-scoped Agent API sub-agents: announcement scout, reception analyst, competitor mapper, risk auditor — each backed by `pro-search` with `web_search` + `fetch_url`
+- ✅ An orchestrator Agent API call that reads the four workpapers and writes the final report
+- ✅ A virtual workpaper filesystem that mirrors the Deep Agents pattern
 - ✅ A CLI and a streaming progress mode for notebooks
 
 ## 🏗️ Architecture
 
 ```mermaid
 graph TD
-    User[User: "Investigate launch X"] --> Orch[Orchestrator Deep Agent]
-    Orch -->|plan + delegate| A1[announcement-scout]
-    Orch -->|plan + delegate| A2[reception-analyst]
-    Orch -->|plan + delegate| A3[competitor-mapper]
-    Orch -->|plan + delegate| A4[risk-auditor]
-    A1 --> Search[(Perplexity Search API)]
-    A2 --> Search
-    A3 --> Search
-    A4 --> Search
-    A1 -->|write_file| FS[(Virtual workpapers)]
-    A2 -->|write_file| FS
-    A3 -->|write_file| FS
-    A4 -->|write_file| FS
-    Orch -->|read_file + synthesize| Report[final_report.md]
+    User[User: "Investigate launch X"] --> Driver[Python driver]
+    Driver -->|Agent API call 1| A1[announcement-scout]
+    Driver -->|Agent API call 2| A2[reception-analyst]
+    Driver -->|Agent API call 3| A3[competitor-mapper]
+    Driver -->|Agent API call 4| A4[risk-auditor]
+    A1 --> Tools[(web_search + fetch_url)]
+    A2 --> Tools
+    A3 --> Tools
+    A4 --> Tools
+    A1 -->|workpaper| FS[(announcement.md)]
+    A2 -->|workpaper| FS2[(reception.md)]
+    A3 -->|workpaper| FS3[(competitors.md)]
+    A4 -->|workpaper| FS4[(risks.md)]
+    Driver -->|Agent API call 5| Orch[orchestrator]
+    FS --> Orch
+    FS2 --> Orch
+    FS3 --> Orch
+    FS4 --> Orch
+    Orch --> Report[final_report.md]
 ```
 
-The orchestrator never calls the search tool itself — it only plans, delegates, reads workpaper files back, and synthesizes. That separation is what keeps the final report grounded in the saved evidence.
+The orchestrator never calls `web_search` itself — it only synthesizes from the workpapers the sub-agents already wrote. That separation is what keeps the final report grounded in saved evidence.
 
 ## 📋 Prerequisites
 
-- **Python 3.10+** (Deep Agents pulls in LangGraph, which targets 3.10 and up)
-- A **Perplexity API key** with Search API access — [get one](https://docs.perplexity.ai/guides/getting-started)
-- Familiarity with [LangChain](https://python.langchain.com/) is helpful but not required
+- **Python 3.9+**
+- A **Perplexity API key** with [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) access — [get one](https://docs.perplexity.ai/guides/getting-started)
 
 ## 🚀 Installation
 
@@ -61,13 +65,9 @@ cd docs/articles/deep-agents-launch-intelligence
 pip install -r requirements.txt
 ```
 
-The `requirements.txt` pins:
+The `requirements.txt` pins only the official Perplexity SDK:
 
 ```
-deepagents>=0.0.5
-langchain-core>=0.3.0
-langchain-perplexity>=0.1.0
-langchain-openai>=0.3.0   # fallback chat model only
 perplexityai>=0.6.0
 ```
 
@@ -76,99 +76,109 @@ perplexityai>=0.6.0
 ```bash
 export PERPLEXITY_API_KEY="your-perplexity-api-key"
 
-# Optional: pick a different chat model. Defaults to sonar-pro.
-export PPLX_MODEL="sonar-pro"
+# Optional: pick different Agent API presets. Defaults to pro-search.
+export PPLX_PRESET="pro-search"
+export PPLX_ORCHESTRATOR_PRESET="pro-search"
 ```
 
-## 🧩 Building block 1 — the Perplexity Search tool
+## 🧩 Building block 1 — sub-agent prompts
 
-The Perplexity Search API accepts up to five queries per call and returns ranked, snippeted, dated results. Wrap it in a small LangChain `@tool` so the sub-agents can invoke it directly:
+Each sub-agent owns one slice of the brief. Narrow scopes are what make the multi-agent plan reliable.
 
 ```python
-from langchain_core.tools import tool
+ANNOUNCEMENT_PROMPT = """You investigate the official announcement of a product launch.
+
+1. Use web_search and fetch_url to find the canonical first-party announcement
+   (vendor blog, press release, keynote recap, spec page).
+2. Extract: launch date, headline positioning, named features, regions/SKUs,
+   pricing, availability windows.
+3. Return a Markdown document with two sections:
+   - ## Bullet notes — raw extracted facts as bullets, each with a URL.
+   - ## Summary — a 6-10 line synthesis with inline citations [1], [2]
+     mapped to the URLs you actually used.
+"""
+```
+
+The other three follow the same shape: research → write workpaper Markdown → return a citation-rich summary. The full prompt set is in `launch_intelligence_agent.py`. Edit them in place to change the scenario — for example, swap the four sub-agents for `policy-tracker`, `litigation-watch`, `vendor-impact`, `mitigation-options` to repurpose this scaffold as an AI-policy monitoring agent.
+
+## 🧩 Building block 2 — running a sub-agent through the Agent API
+
+Each sub-agent is a single `client.responses.create` call:
+
+```python
 from perplexity import Perplexity
 
 COOKBOOK_SLUG = "cookbook/deep-agents-launch-intelligence/0.1.0"
 
 client = Perplexity(default_headers={"X-Pplx-Integration": COOKBOOK_SLUG})
 
-@tool("perplexity_search", return_direct=False)
-def perplexity_search(
-    queries: list[str],
-    max_results: int = 8,
-    max_tokens_per_page: int = 512,
-) -> str:
-    """Run 1-5 grounded web searches via the Perplexity Search API."""
-    response = client.search.create(
-        query=queries[:5],
-        max_results=max_results,
-        max_tokens_per_page=max_tokens_per_page,
-    )
-    return _format_search_results(response)
+response = client.responses.create(
+    preset="pro-search",
+    instructions=ANNOUNCEMENT_PROMPT,
+    input=f"Launch topic: {topic}\n\nProduce the workpaper described in your instructions.",
+    tools=[
+        {"type": "web_search"},
+        {"type": "fetch_url"},
+    ],
+    max_steps=8,
+    max_output_tokens=2048,
+)
 ```
 
 Key points:
 
-- The tool returns **Markdown bullets with explicit URLs** so the model has a stable surface to cite from. Asking the model for `[1]`-style citations keyed to those URLs is what enforces grounding.
-- Multi-query support (`queries[:5]`) lets a sub-agent fan out related searches in one round-trip — much cheaper than running five sequential calls.
-- The cookbook attaches an `X-Pplx-Integration` header to every Search call. Use a slug that identifies your integration so the Perplexity team can attribute traffic when you ship to production.
-
-The full helper that flattens, de-duplicates, and formats results lives in [`launch_intelligence_agent.py`](./launch_intelligence_agent.py).
-
-## 🧩 Building block 2 — sub-agent prompts
-
-Each sub-agent owns one slice of the brief. Narrow scopes are what make the orchestrator's plan reliable.
-
-```python
-ANNOUNCEMENT_PROMPT = """You investigate the official announcement of a product launch.
-
-1. Use perplexity_search to find the canonical first-party announcement
-   (vendor blog, press release, keynote recap, spec page).
-2. Extract: launch date, headline positioning, named features, regions/SKUs,
-   pricing, availability windows.
-3. Save raw bullet notes to announcement.md via write_file.
-4. Return a 6-10 line summary with inline citations [1], [2] mapped to the
-   URLs you actually used.
-"""
-```
-
-The other three follow the same shape: research → write workpaper file → return a citation-rich summary. The full prompt set is in `launch_intelligence_agent.py`. Edit them in place to change the scenario — for example, swap the four sub-agents for `policy-tracker`, `litigation-watch`, `vendor-impact`, `mitigation-options` to repurpose this scaffold as an AI-policy monitoring agent.
+- The Agent API plans its own tool steps and returns inline citations from the URLs it actually retrieved. Asking the model for `[1]`-style citations keyed to those URLs is what enforces grounding.
+- `pro-search` is the recommended preset for grounded multi-tool research over the open web. Use a different preset (e.g. a domain-specific one) by exporting `PPLX_PRESET` or passing `--preset` on the CLI.
+- The cookbook attaches an `X-Pplx-Integration` header to every Agent API call. Use a slug that identifies your integration so the Perplexity team can attribute traffic when you ship to production.
 
 ## 🧩 Building block 3 — the orchestrator
 
-The orchestrator prompt prescribes the plan and the final report shape, and explicitly forbids inventing URLs:
+The orchestrator is one final Agent API call with **no tools** — it composes the brief strictly from the four workpapers:
 
-```text
-1. Delegate to announcement-scout
-2. Delegate to reception-analyst
-3. Delegate to competitor-mapper
-4. Delegate to risk-auditor
-5. Read workpapers back; write final_report.md.
-6. Never cite a URL that did not appear in a Perplexity Search result.
+```python
+ORCHESTRATOR_PROMPT = """You are the lead analyst on a product-launch intelligence team.
+
+You are given four workpapers prepared by specialist sub-agents:
+- announcement.md
+- reception.md
+- competitors.md
+- risks.md
+
+Synthesize them into a single brief using exactly this section order:
+1. Headline   2. Official announcement   3. Independent reception
+4. Competitive landscape   5. Risks and open questions   6. Sources
+
+Hard rules:
+* Never cite a URL that did not appear in the workpapers.
+* Numbers must be attributed (date, source). If not in the workpapers, write "not disclosed".
+* Keep the final report under ~700 words.
+"""
+
+response = client.responses.create(
+    preset="pro-search",
+    instructions=ORCHESTRATOR_PROMPT,
+    input=f"Launch topic: {topic}\n\nWorkpapers:\n\n{workpaper_blob}\n\nWrite final_report.md.",
+    max_output_tokens=2048,
+)
 ```
 
 Putting these rules in the orchestrator (rather than relying on the model to remember them across calls) is what makes the brief reproducible.
 
-## 🧩 Building block 4 — wiring it together
+## 🧩 Building block 4 — the workpaper filesystem
 
-Deep Agents accepts a chat model, a list of tools, an `instructions` string, and a `subagents` list. That's the whole graph:
+Workpapers live in a Python dict that the driver passes between stages, mirroring the Deep Agents virtual filesystem semantics:
 
 ```python
-from deepagents import create_deep_agent
-from langchain_perplexity import ChatPerplexity
+files: Dict[str, str] = {}
 
-chat_model = ChatPerplexity(model="sonar-pro", temperature=0.0)
-search_tool = make_perplexity_search_tool()  # the @tool from above
+for spec in SUBAGENTS:
+    text, _urls = run_subagent(client, spec, topic, cfg)
+    files[spec.workpaper] = text                # announcement.md, reception.md, ...
 
-agent = create_deep_agent(
-    model=chat_model,
-    tools=[search_tool],
-    instructions=ORCHESTRATOR_PROMPT,
-    subagents=SUBAGENTS,   # the four prompts wrapped in dicts
-)
+files["final_report.md"] = run_orchestrator(client, topic, files, cfg)
 ```
 
-`create_deep_agent` returns a compiled LangGraph runnable with `read_file`, `write_file`, `ls`, and a planning tool already in scope — so each sub-agent can open `announcement.md`, write to it, and the orchestrator can pull it back later.
+Every workpaper a sub-agent produced is available downstream — handy for pipelines that want to keep the raw evidence alongside the synthesized report.
 
 ## 🏃 Running it
 
@@ -178,7 +188,7 @@ agent = create_deep_agent(
 python launch_intelligence_agent.py "NVIDIA Rubin GPU announcement"
 ```
 
-The script prints `final_report.md` to stdout when the graph terminates.
+The script prints a one-line progress marker per stage to stderr, then `final_report.md` to stdout when the pipeline terminates.
 
 ### Streaming progress (notebooks, long-running runs)
 
@@ -186,7 +196,7 @@ The script prints `final_report.md` to stdout when the graph terminates.
 python launch_intelligence_agent.py "Apple Vision Pro 2" --stream
 ```
 
-`--stream` uses LangGraph's `stream_mode="updates"` and prints one line to stderr per node tick — useful for watching the four sub-agents fire in sequence:
+`--stream` prints one line to stderr per stage as it finishes:
 
 ```
 [   3.4s] announcement-scout
@@ -203,12 +213,13 @@ from launch_intelligence_agent import investigate_launch, AgentConfig
 
 result = investigate_launch(
     "OpenAI Sora 2 general availability",
-    AgentConfig(model="sonar-pro"),
+    AgentConfig(subagent_preset="pro-search"),
 )
-print(result["files"]["final_report.md"])
+print(result.final_report)
+print(result.files["announcement.md"])      # raw workpaper from sub-agent 1
 ```
 
-`result["files"]` exposes every workpaper the sub-agents wrote — handy for downstream pipelines that want to keep the raw evidence alongside the synthesized report.
+`result.files` exposes every workpaper the sub-agents wrote — handy for downstream pipelines that want to keep the raw evidence alongside the synthesized report. `result.sources` maps each sub-agent name to the URLs the Agent API retrieved during that call.
 
 ## 📤 Expected output shape
 
@@ -243,30 +254,28 @@ but flagged hallucinated text-in-image artefacts [5].
 
 ## 🔍 Grounding and citation best practices
 
-- **Cite only URLs returned by the search tool.** The orchestrator prompt has this rule, and the sub-agent prompts repeat it. Models will happily invent plausible-looking URLs otherwise.
+- **Cite only URLs the Agent API retrieved.** The orchestrator prompt has this rule, and the sub-agent prompts repeat it. Models will happily invent plausible-looking URLs otherwise.
 - **Don't paraphrase numbers.** Each sub-agent attributes numbers to a date and a source. The orchestrator forwards that attribution into the final report.
-- **Treat `write_file` as a commitment.** Once a sub-agent saves notes, the orchestrator reads them back. That round-trip is the difference between "the model said it" and "the model said it and we still have the receipt".
+- **Treat workpapers as a commitment.** Once a sub-agent saves notes, the orchestrator reads them back. That round-trip is the difference between "the model said it" and "the model said it and we still have the receipt".
 
 ## 🛰️ Observability
 
-Deep Agents is a LangGraph runnable, so it works with the standard LangChain tracing stack. To trace a run:
+Every Agent API call returns its full tool-step trace (`web_search_results`, `fetch_url_results`) on the response object. The driver collects URLs into `result.sources[<sub-agent>]` so you can audit which sources each sub-agent actually used:
 
-```bash
-export LANGSMITH_TRACING=true
-export LANGSMITH_API_KEY="ls__..."
-export LANGSMITH_PROJECT="launch-intelligence"
-python launch_intelligence_agent.py "Anthropic Claude Opus 4.7 release"
+```python
+for name, urls in result.sources.items():
+    print(name, len(urls), "urls")
 ```
 
-Each sub-agent call shows up as its own span, with the search-tool inputs and outputs, the workpaper writes, and the orchestrator's final synthesis. That makes it cheap to debug "why did the brief skip pricing?" by inspecting the failing sub-agent in isolation.
+Cost and step counts are available on `response.usage` per call (see the [Agent API quickstart](https://docs.perplexity.ai/docs/agent-api/quickstart)).
 
 ## 🛠️ Troubleshooting
 
-- **`RuntimeError: Set PERPLEXITY_API_KEY`** — the chat model could not find a key. Export `PERPLEXITY_API_KEY` or pass `--api-key`.
-- **`ImportError: deepagents`** — install the package: `pip install deepagents`. If you are pinning to an older `langgraph`, upgrade it too: `pip install -U langgraph`.
-- **`langchain_perplexity` not found** — the script falls back to `langchain-openai` pointed at `https://api.perplexity.ai`. To remove the warning, install the official integration: `pip install langchain-perplexity`.
-- **Sub-agent never writes a workpaper** — usually the sub-agent prompt is too vague. The four prompts in this cookbook always end with "save raw notes to `<filename>.md`" — keep that line when you adapt them.
-- **The brief cites a URL that doesn't open** — confirm the URL appears in the workpaper. If it does, the search result was stale; lower `max_tokens_per_page` and re-run, or filter results by `date`.
+- **`RuntimeError: Set PERPLEXITY_API_KEY`** — the SDK could not find a key. Export `PERPLEXITY_API_KEY` or pass `--api-key`.
+- **`ImportError: perplexity`** — install the SDK: `pip install perplexityai`.
+- **Sub-agent returns no workpaper** — usually the prompt is too vague. The four prompts in this cookbook always end with explicit `## Bullet notes` and `## Summary` sections — keep that structure when you adapt them.
+- **The brief cites a URL that doesn't open** — confirm the URL appears in the workpaper. If it does, the search result was stale; lower `--max-steps` and re-run, or rephrase the sub-agent prompt to request more recent sources.
+- **Hit `max_steps` before the sub-agent finished** — bump `--max-steps` (default 8). Most sub-agents converge in 3-6 steps.
 
 ## 🔁 Adapting the scaffold
 
@@ -279,21 +288,21 @@ The same four-sub-agent skeleton handles other intelligence scenarios with only 
 | Earnings preview | guidance-tracker, sell-side-consensus, peer-watch, risk-auditor |
 | Open-source release | changelog-scout, community-reception, downstream-adopters, security-auditor |
 
-Swap the four `SUBAGENTS` entries and update the orchestrator's section list — the rest of the scaffold (search tool, virtual filesystem, streaming, CLI) stays the same.
+Swap the four `SUBAGENTS` entries and update the orchestrator's section list — the rest of the scaffold (Agent API client, workpaper filesystem, streaming, CLI) stays the same.
 
 ## ⚠️ Limitations
 
-- The Search API's `max_results` is a *total* across multi-query calls, so a four-sub-agent run with 8 results each easily fans out to 32+ pages. Keep `max_tokens_per_page` modest unless you need long snippets.
-- Deep Agents' virtual filesystem is per-invocation — workpapers are not persisted between runs by default. To keep them, dump `result["files"]` to disk after the call.
-- `langchain-perplexity` does not currently expose a `default_headers` hook on the chat model, so the `X-Pplx-Integration` slug only attaches to Search API traffic. The fallback `ChatOpenAI` path does support headers.
+- The Agent API is invoked sequentially per sub-agent in this cookbook. Drop in `concurrent.futures.ThreadPoolExecutor` to fan the four sub-agents out in parallel if latency matters more than rate-limit headroom.
+- Workpapers are per-invocation — they are not persisted between runs. Dump `result.files` to disk after the call to keep them.
+- The cookbook treats `pro-search` as the default preset for both sub-agents and orchestrator. If your account has access to other presets, swap them in via `PPLX_PRESET` / `PPLX_ORCHESTRATOR_PRESET` or the CLI flags.
 
 ## 📚 Resources
 
-- [Perplexity Search API](https://docs.perplexity.ai/docs/search-api)
+- [Perplexity Agent API quickstart](https://docs.perplexity.ai/docs/agent-api/quickstart)
+- [Agent API web_search tool](https://docs.perplexity.ai/docs/agent-api/web-search)
+- [Agent API fetch_url tool](https://docs.perplexity.ai/docs/agent-api/fetch-url)
 - [Perplexity API quickstart](https://docs.perplexity.ai/guides/getting-started)
-- [LangChain Perplexity chat integration](https://python.langchain.com/docs/integrations/chat/perplexity)
-- [Deep Agents (langchain-ai/deepagents)](https://github.com/langchain-ai/deepagents)
-- [LangGraph streaming reference](https://langchain-ai.github.io/langgraph/concepts/streaming/)
+- [Deep Agents pattern (langchain-ai/deepagents)](https://github.com/langchain-ai/deepagents) — the orchestration pattern this cookbook reproduces on top of the Agent API.
 
 ---
 
