@@ -1,0 +1,9 @@
+langchain-perplexity>=1.3.1  # use_responses_api landed in langchain-ai/langchain#37359
+langgraph>=0.2.50
+langchain-core>=0.3
+langsmith>=0.2
+httpx>=0.27
+
+# Section 2 only
+langchain-parallel>=0.4
+langchain-exa>=0.2

@@ -1,0 +1,176 @@
+---
+title: VC Investment Memo Agent with LangGraph
+description: Build an auditable, citation-grounded VC research agent with LangGraph and the Perplexity Agent API, and pick the best search provider with a LangSmith eval harness.
+sidebar_position: 3
+keywords: [langgraph, langchain, langsmith, agent api, web_search, finance_search, investment memo, multi-agent, citations, evaluation]
+---
+
+# Building an Auditable VC Investment Memo Agent with LangGraph and the Perplexity Agent API
+
+## Overview
+
+This guide builds an agent that takes a company name and returns a seven-section VC investment memo — Snapshot, Team, Financials, Product, Market, Risks, and a Thesis ending in a one-line recommendation — where **every claim is traced back to a primary source**.
+
+It runs on the [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/tools) and its built-in `web_search` and `finance_search` tools, orchestrated with [LangGraph](https://langchain-ai.github.io/langgraph/), and evaluated in [LangSmith](https://docs.langchain.com/langsmith/home). The whole build runs in about ninety seconds for roughly $0.40 per memo.
+
+The design lesson generalizes well beyond finance: **splitting search from synthesis is a cheap, structural reliability fix for a research agent.** Four research nodes fan out in parallel, each calling the Agent API with its own tools; a final synthesizer node has *no tools* and can only cite evidence the research nodes already gathered — so the memo cannot invent a source.
+
+![Company name flows into START, fans out to four parallel research nodes (team, financials, product, market), which all feed a single synthesizer node that produces the memo at END.](../../static/img/langchain-vc-memo-architecture.png)
+
+## Features
+
+- **Parallel research fan-out** — four focused research nodes (team, financials, product, market) run concurrently, each with its own tools and search budget.
+- **Tool-less synthesizer** — the final memo is composed only from upstream evidence, a structural guard against fabricated citations.
+- **Built-in Agent API tools** — `web_search` and `finance_search` work out of the box; no client-side search plumbing for the core agent.
+- **Auditable in LangSmith** — every node's tool calls and outputs are captured, so any claim traces back to the search result that produced it.
+- **Provider eval harness** — a LangSmith comparison that scores search providers on primary-source rate, financial-concept coverage, latency, and cost.
+
+## Prerequisites
+
+- Python 3.10+
+- A [Perplexity API key](https://docs.perplexity.ai/docs/admin/api-key-management) (`PPLX_API_KEY`)
+- A [LangSmith API key](https://docs.smith.langchain.com/) for tracing and evaluation
+- (Section 2 only) [Parallel](https://platform.parallel.ai/) and [Exa](https://dashboard.exa.ai/) API keys
+
+## Installation
+
+```bash
+pip install -r scripts/requirements.txt
+```
+
+```bash
+# ChatPerplexity reads PPLX_API_KEY.
+export PPLX_API_KEY="pplx-..."
+export LANGSMITH_API_KEY="ls__..."
+export LANGSMITH_TRACING="true"   # capture every node's tool calls end-to-end
+```
+
+## How it works
+
+### Graph state
+
+Each research node reads `company` from the shared state and writes its findings into `research_output`; a reducer merges the parallel writes.
+
+```python
+def merge_research_output(left: dict[str, str], right: dict[str, str]) -> dict[str, str]:
+    """Each research node returns {"<section>": "..."}; merge into one dict."""
+    return {**(left or {}), **(right or {})}
+
+
+class MemoState(TypedDict):
+    company: str
+    research_output: Annotated[dict[str, str], merge_research_output]
+    memo: str
+```
+
+### Models and tools
+
+The Agent API exposes Perplexity's built-in tools directly. The financials node adds `finance_search`; the rest use `web_search`. `max_steps` caps each node's internal search loop.
+
+```python
+def _agent_model(model: str) -> ChatPerplexity:
+    # The Responses (Agent) API ignores sampling params like temperature, so we omit it.
+    return ChatPerplexity(model=model, use_responses_api=True)
+
+TEAM_TOOLS = [{"type": "web_search", "filters": {"search_recency_filter": "year"}}]
+FINANCIALS_TOOLS = [{"type": "finance_search"}, {"type": "web_search"}]
+PRODUCT_TOOLS = MARKET_TOOLS = [{"type": "web_search"}]
+```
+
+### The synthesizer
+
+The synthesizer has no tools. It cites only from the research outputs, so anything in the memo is grounded in research the nodes actually did.
+
+```python
+def synthesizer_node(state: MemoState) -> dict[str, str]:
+    """Combine all research outputs into the final memo. No tools attached."""
+    research_output_block = "\n\n".join(
+        f"## Research output: {name}\n\n{body}"
+        for name, body in sorted(state["research_output"].items())
+    )
+    msg = SYNTHESIZER_MODEL.invoke([
+        {"role": "system", "content": SYNTH_PROMPT.format(company=state["company"])},
+        {"role": "user", "content": f"Company: {state['company']}\n\n{research_output_block}"},
+    ])
+    return {"memo": msg.content}
+```
+
+### Wiring the graph
+
+Four research nodes fan out from `START` in parallel and converge on the synthesizer — a few lines of graph wiring.
+
+```python
+def build_graph():
+    g = StateGraph(MemoState)
+    for section in ("team", "financials", "product", "market"):
+        g.add_node(section, research_node(section))
+        g.add_edge(START, section)          # fan out from START, in parallel
+        g.add_edge(section, "synthesizer")  # ...and back into the synthesizer
+    g.add_node("synthesizer", synthesizer_node)
+    g.add_edge("synthesizer", END)
+    return g.compile()
+```
+
+### Running it
+
+```bash
+python -m memo --company "Anthropic"
+```
+
+The full agent lives in `scripts/memo/` (`graph.py`, `main.py`).
+
+## Choosing a search provider
+
+A common question when building a research agent is which search provider to use. `scripts/memo/profiles.py` runs the same graph with three swappable client-side search tools — `PerplexitySearchResults`, `ParallelSearchTool`, `ExaSearchResults` — so the same metrics apply to each, and `scripts/memo/compare.py` scores them in LangSmith.
+
+Two custom evaluators score memo quality, alongside LangSmith's built-in latency and cost:
+
+- `primary_source_rate` — share of citations from primary sources (IR pages, SEC, official press) rather than aggregators.
+- `financial_concept_coverage` — whether the Financials section covers valuation, revenue, funding, and operating metrics.
+
+```bash
+python -m memo.compare
+```
+
+### Results
+
+Scored across ten public and private companies on `openai/gpt-5.5`:
+
+| Metric | Perplexity | Parallel | Exa |
+| --- | --- | --- | --- |
+| Primary-source rate | **1.00** | 0.82 | 0.85 |
+| Financial-concept coverage | **0.70** | 0.70 | 0.50 |
+| Latency p50 (s/memo) | **91** | 192 | 143 |
+| Cost (USD/memo) | **$0.38** | $0.60 | $0.67 |
+
+Perplexity posted a perfect primary-source rate, the fastest memos, and the lowest cost per run, while tying for the best financial-concept coverage. For an output that has to withstand scrutiny — a VC memo does — that mix of source quality and speed is hard to beat.
+
+## Code explanation
+
+```
+scripts/
+├── requirements.txt
+├── .env.example
+└── memo/
+    ├── graph.py          # typed state, parallel research nodes, tool-less synthesizer, build_graph()
+    ├── main.py           # CLI entrypoint (python -m memo --company "...")
+    ├── profiles.py       # section 2: the three swappable provider profiles
+    ├── evaluators.py     # LangSmith evaluators
+    ├── eval_dataset.py   # companies used as eval inputs
+    ├── compare.py        # runs the LangSmith comparison
+    └── _compat.py        # temporary shim (see Limitations)
+```
+
+## Links
+
+- [Perplexity Agent API tools](https://docs.perplexity.ai/docs/agent-api/tools)
+- [Finance Search](https://docs.perplexity.ai/docs/agent-api/finance-search)
+- [LangChain Perplexity provider](https://docs.langchain.com/oss/python/integrations/providers/perplexity)
+- [LangGraph](https://langchain-ai.github.io/langgraph/)
+- [LangSmith evaluation](https://docs.langchain.com/langsmith/evaluation)
+
+## Limitations
+
+- **Client-side tool loop shim.** Section 2 drives a client-side function-tool loop to compare external search providers. The released `langchain-perplexity` (≤ 1.3.1) does not serialize `ToolMessage` / `AIMessage.tool_calls` back to the API, so `scripts/memo/_compat.py` patches the two converters. Remove it once the upstream fix ships. The core agent (Section 1) uses Perplexity's built-in server-side tools and needs no shim.
+- **Section 2 uses web search only.** The provider comparison swaps web-search backends, so the Perplexity profile there does not use `finance_search` — financial-concept coverage for private companies can vary run to run.
+- **The seven-section template and PASS / TRACK / ADVANCE / LEAD scale are conventions defined for this agent** — swap in your own firm's format.
