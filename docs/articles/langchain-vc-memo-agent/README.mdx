@@ -157,8 +157,7 @@ scripts/
     ├── profiles.py       # section 2: the three swappable provider profiles
     ├── evaluators.py     # LangSmith evaluators
     ├── eval_dataset.py   # companies used as eval inputs
-    ├── compare.py        # runs the LangSmith comparison
-    └── _compat.py        # temporary shim (see Limitations)
+    └── compare.py        # runs the LangSmith comparison
 ```
 
 ## Links
@@ -171,6 +170,5 @@ scripts/
 
 ## Limitations
 
-- **Client-side tool loop shim.** Section 2 drives a client-side function-tool loop to compare external search providers. The released `langchain-perplexity` (≤ 1.3.1) does not serialize `ToolMessage` / `AIMessage.tool_calls` back to the API, so `scripts/memo/_compat.py` patches the two converters. Remove it once the upstream fix ships. The core agent (Section 1) uses Perplexity's built-in server-side tools and needs no shim.
 - **Section 2 uses web search only.** The provider comparison swaps web-search backends, so the Perplexity profile there does not use `finance_search` — financial-concept coverage for private companies can vary run to run.
 - **The seven-section template and PASS / TRACK / ADVANCE / LEAD scale are conventions defined for this agent** — swap in your own firm's format.

@@ -9,18 +9,17 @@ from langchain_parallel import ParallelSearchTool
 from langchain_perplexity import ChatPerplexity, PerplexitySearchResults
 from langgraph.graph import END, START, StateGraph
 
-from . import _compat  # noqa: F401  temporary tool-loop shim; see _compat docstring
 from .graph import (
     GUIDANCE, RESEARCH_PROMPT, MemoState, SYNTH_PROMPT,
 )
 
 
-# Rich tool descriptions teach the LLM to use date filters and multi-query
-# variants when calling each provider — small change, big impact on coverage.
+# Rich tool descriptions teach the LLM how to call each provider well --
+# small change, big impact on coverage.
 TOOL_DESCRIPTIONS = {
     "perplexity_search_results_json": (
         "Perplexity Search API: ranked web results with title, URL, snippet, and date. "
-        "Pass `query` as a list of 2-3 diverse phrasings and set "
+        "Pass `query` as a concise search string and set "
         "`search_recency_filter=\"year\"` for time-sensitive lookups."
     ),
     "parallel_web_search": (
@@ -40,18 +39,35 @@ class ProviderProfile:
     build_graph: Callable[[], Any]
 
 
-def _to_flat_function_tool(tool):
-    """Convert a LangChain tool to a flat OpenAI function-tool spec for the Responses API."""
-    nested = convert_to_openai_tool(tool)
-    fn = nested["function"]
-    desc = TOOL_DESCRIPTIONS.get(fn["name"], fn.get("description", ""))
-    return {"type": "function", "name": fn["name"], "description": desc,
-            "parameters": fn.get("parameters", {})}
+# Explicit parameter schemas keep each tool's surface small: the model only
+# sees the filters this example actually uses, so its calls stay well-formed.
+TOOL_PARAMETERS = {
+    "perplexity_search_results_json": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "The search query."},
+            "max_results": {"type": "integer", "description": "Maximum results to return."},
+            "search_recency_filter": {"type": "string", "enum": ["day", "week", "month", "year"],
+                                      "description": "Restrict to a recent window."},
+        },
+        "required": ["query"],
+    },
+}
+
+
+def _to_function_tool(tool):
+    """Convert a LangChain tool to an OpenAI function-tool spec, applying the overrides above."""
+    spec = convert_to_openai_tool(tool)
+    fn = spec["function"]
+    fn["description"] = TOOL_DESCRIPTIONS.get(fn["name"], fn.get("description", ""))
+    if fn["name"] in TOOL_PARAMETERS:
+        fn["parameters"] = TOOL_PARAMETERS[fn["name"]]
+    return spec
 
 
 def _research_node(section, sub_model, search_tool):
     """Build a research node closure that loops tool calls until the model returns a final answer."""
-    bound = sub_model.bind(tools=[_to_flat_function_tool(search_tool)])
+    bound = sub_model.bind_tools([_to_function_tool(search_tool)])
 
     def _research(state: MemoState) -> dict:
         """Run the tool-calling loop for this section and return its research output."""
