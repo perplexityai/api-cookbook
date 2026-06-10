@@ -2,7 +2,7 @@
 title: VC Investment Memo Agent with LangGraph
 description: Build an auditable, citation-grounded VC research agent with LangGraph and the Perplexity Agent API, and pick the best search provider with a LangSmith eval harness.
 sidebar_position: 3
-keywords: [langgraph, langchain, langsmith, agent api, web_search, finance_search, investment memo, multi-agent, citations, evaluation]
+keywords: [langgraph, langchain, langsmith, agent api, investment memo, evaluation]
 ---
 
 # Building an Auditable VC Investment Memo Agent with LangGraph and the Perplexity Agent API
@@ -79,7 +79,7 @@ PRODUCT_TOOLS = MARKET_TOOLS = [{"type": "web_search"}]
 
 ### The synthesizer
 
-The synthesizer has no tools. It cites only from the research outputs, so anything in the memo is grounded in research the nodes actually did.
+The synthesizer has no tools. It composes all seven memo sections from the four nodes' research outputs, so every cited claim is grounded in research one of the nodes actually did. Sections 1–6 each end with a `### Citations` list pairing every source URL with the evidence it supports; the Thesis is the one analysis-only section, with no citations.
 
 ```python
 def synthesizer_node(state: MemoState) -> dict[str, str]:
@@ -102,11 +102,16 @@ Four research nodes fan out from `START` in parallel and converge on the synthes
 ```python
 def build_graph():
     g = StateGraph(MemoState)
+    g.add_node("team", team_node)
+    g.add_node("financials", financials_node)
+    g.add_node("product", product_node)
+    g.add_node("market", market_node)
+    g.add_node("synthesizer", synthesizer_node)
+
     for section in ("team", "financials", "product", "market"):
-        g.add_node(section, research_node(section))
         g.add_edge(START, section)          # fan out from START, in parallel
         g.add_edge(section, "synthesizer")  # ...and back into the synthesizer
-    g.add_node("synthesizer", synthesizer_node)
+
     g.add_edge("synthesizer", END)
     return g.compile()
 ```
@@ -143,9 +148,9 @@ Scored across ten public and private companies on `openai/gpt-5.5`:
 | Latency p50 (s/memo) | **91** | 192 | 143 |
 | Cost (USD/memo) | **$0.38** | $0.60 | $0.67 |
 
-Perplexity posted a perfect primary-source rate, the fastest memos, and the lowest cost per run, while tying for the best financial-concept coverage. For an output that has to withstand scrutiny — a VC memo does — that mix of source quality and speed is hard to beat.
+Perplexity posted a perfect primary-source rate, the fastest memos, the lowest cost per run, and tied for the best financial-concept coverage on this run. Re-score the providers on your own dataset to see how they compare for your use case.
 
-## Code explanation
+## Directory structure
 
 ```
 scripts/
