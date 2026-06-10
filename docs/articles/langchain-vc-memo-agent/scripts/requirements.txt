@@ -4,6 +4,6 @@ langchain-core>=0.3
 langsmith>=0.2
 httpx>=0.27
 
-# Section 2 only
+# Provider comparison only
 langchain-parallel>=0.4
 langchain-exa>=0.2
