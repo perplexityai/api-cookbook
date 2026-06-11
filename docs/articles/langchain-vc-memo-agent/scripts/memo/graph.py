@@ -1,3 +1,7 @@
+# NOTE: The inline code blocks in the cookbook guide
+# (docs/cookbook/articles/langchain-vc-memo-agent/README.mdx in ppl-ai/api-docs)
+# are verbatim slices of this file. When editing either, update both in the
+# same change.
 from __future__ import annotations
 
 from datetime import datetime, timezone
