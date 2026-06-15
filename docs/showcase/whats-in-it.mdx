@@ -1,0 +1,96 @@
+---
+title: What's In It | AI-Powered Food Product Analyzer
+description: A cross-platform food product analysis application that helps users understand food ingredients, nutritional content, and dietary compatibility by scanning barcodes
+sidebar_position: 25
+keywords: [whats-in-it, food analysis, barcode scanner, nutrition, perplexity, sonar, flutter, fastapi, openfoodfacts, health]
+---
+
+**What's In It** is an AI-powered cross-platform application that helps users make informed food choices by analyzing product ingredients, nutritional content, and dietary compatibility through barcode scanning. Built with Flutter and FastAPI, it leverages the **Perplexity Sonar API** alongside OpenFoodFacts to provide comprehensive food product insights.
+
+## Features
+
+* **Barcode Scanning** for instant product recognition and analysis
+* **AI-Powered Nutrition Analysis** with detailed ingredient breakdown
+* **Health Score Calculation** based on nutritional content and ingredient quality
+* **Ingredient Safety Checking** with food additive information
+* **Allergen Detection** and dietary compatibility assessment
+* **Dietary Preference Customization** for personalized recommendations
+* **Cross-Platform Support** (iOS, Web, Android compatible)
+* **Millions of Products** supported through OpenFoodFacts database
+* **Real-time AI Insights** powered by Perplexity Sonar API
+
+## Prerequisites
+
+* Flutter SDK 2.0.0+
+* Python 3.8+
+* Perplexity API key (Sonar access)
+* OpenFoodFacts API access
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/lavande/Whats-In-It.git
+cd Whats-In-It
+
+# Set up the backend
+cd backend
+pip install -r requirements.txt
+cp .env.example .env
+# Edit .env with your API keys
+
+# Set up the frontend
+cd frontend/whatsinit
+flutter pub get
+```
+
+## Running the Application
+
+1. **Start the backend server**:
+   ```bash
+   cd backend
+   uvicorn main:app --reload
+   ```
+
+2. **Run the Flutter app**:
+   ```bash
+   cd frontend/whatsinit
+   flutter run
+   ```
+
+3. **Using the App**:
+   - Scan product barcodes using your device camera
+   - Enter barcodes manually for web version
+   - Get instant nutrition analysis and health scores
+   - Review ingredient safety and allergen information
+   - Receive personalized dietary recommendations
+
+## Code Explanation
+
+* **Frontend (Flutter)**: Cross-platform mobile and web application with barcode scanning capabilities
+* **Backend (FastAPI)**: Python API server handling product data processing and AI analysis
+* **AI Integration**: Perplexity Sonar API for intelligent food analysis and health recommendations
+* **Data Source**: OpenFoodFacts database providing comprehensive product information
+* **Health Analysis**: AI-powered scoring system for nutritional assessment
+* **Cross-Platform**: Single codebase supporting iOS, Android, and web platforms
+
+## How the Sonar API Is Used
+
+What's In It leverages the **Perplexity Sonar API** to provide intelligent analysis of food products beyond basic nutritional facts. The API processes ingredient lists and nutritional data to generate health scores, identify potential allergens, assess ingredient safety, and provide personalized dietary recommendations. This AI-powered analysis helps users understand complex food labels and make informed choices based on their specific health goals and dietary restrictions.
+
+## Demo Video
+
+<iframe
+  className="w-full aspect-video rounded-xl"
+  src="https://www.youtube.com/embed/YP_tgotxAMA"
+  title="What's In It Demo Video"
+  frameBorder="0"
+  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+  allowFullScreen
+></iframe>
+
+## Links
+
+- **Live Demo**: https://whats-in-it.org/
+- **GitHub Repository**: https://github.com/Lavande/Whats-In-It
+- **YouTube Demo**: https://youtu.be/YP_tgotxAMA
