@@ -1,6 +1,6 @@
-A comprehensive collection of practical examples, integration guides, and community showcases for building with [Perplexity's Agent API](https://docs.perplexity.ai/home) — the new primary API for building hosted agents with native web access, citations, code execution, subagents, and durable, long-running work.
+A comprehensive collection of practical examples, integration guides, and community showcases for building with [Perplexity's Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) — the new primary API for building hosted agents with native web access, citations, code execution, subagents, and durable, long-running work.
 
-> **Agent API is now the primary Perplexity API.** New projects should build on the Agent API. The [Sonar API](https://docs.perplexity.ai/home) (`/chat/completions`) is deprecated — if you're on Sonar, see the [migrate from Sonar guide](https://docs.perplexity.ai/home) to move to the Agent API.
+> **Agent API is now the primary Perplexity API.** New projects should build on the Agent API. The Sonar API (`/chat/completions`) is deprecated — if you're on Sonar, see the [migrate from Sonar guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar) to move to the Agent API.
 
 📖 **[View the full cookbook →](https://docs.perplexity.ai/cookbook)**
 
@@ -61,8 +61,8 @@ Have a project built with the Agent API? We'd love to feature it!
 
 ## Resources
 
-- **[Agent API Documentation](https://docs.perplexity.ai/home)**
-- **[Migrate from Sonar](https://docs.perplexity.ai/home)**
+- **[Agent API Documentation](https://docs.perplexity.ai/docs/agent-api/quickstart)**
+- **[Migrate from Sonar](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar)**
 - **[API Playground](https://perplexity.ai/account/api/playground)**
 - **[Cookbook Documentation](https://docs.perplexity.ai/cookbook)**
 
