@@ -1,4 +1,6 @@
-A comprehensive collection of practical examples, integration guides, and community showcases for building with [Perplexity's Sonar API](https://sonar.perplexity.ai/) - the fastest, most cost-effective AI answer engine with real-time search capabilities.
+A comprehensive collection of practical examples, integration guides, and community showcases for building with [Perplexity's Agent API](https://docs.perplexity.ai/home) — the new primary API for building hosted agents with native web access, citations, code execution, subagents, and durable, long-running work.
+
+> **Agent API is now the primary Perplexity API.** New projects should build on the Agent API. The [Sonar API](https://docs.perplexity.ai/home) (`/chat/completions`) is deprecated — if you're on Sonar, see the [migrate from Sonar guide](https://docs.perplexity.ai/home) to move to the Agent API.
 
 📖 **[View the full cookbook →](https://docs.perplexity.ai/cookbook)**
 
@@ -7,12 +9,12 @@ A comprehensive collection of practical examples, integration guides, and commun
 ### 🛠️ [Examples](docs/examples/)
 Ready-to-run applications demonstrating real-world use cases:
 
+- **[Equity Research Brief](docs/examples/equity-research-brief/)** - Agent API + `finance_search` for ticker-level research briefs
+- **[Finance Chart (Sandbox)](docs/examples/finance-chart-sandbox/)** - Agent API + `finance_search` + `sandbox` to chart a stock's price history
 - **[Fact Checker CLI](docs/examples/fact-checker-cli/)** - Verify claims and articles for accuracy
 - **[Daily Knowledge Bot](docs/examples/daily-knowledge-bot/)** - Automated daily fact delivery system  
 - **[Disease Information App](docs/examples/disease-qa/)** - Interactive medical information lookup
 - **[Financial News Tracker](docs/examples/financial-news-tracker/)** - Real-time market analysis
-- **[Equity Research Brief](docs/examples/equity-research-brief/)** - Agent API + `finance_search` for ticker-level research briefs
-- **[Finance Chart (Sandbox)](docs/examples/finance-chart-sandbox/)** - Agent API + `finance_search` + `sandbox` to chart a stock's price history
 - **[Academic Research Finder](docs/examples/research-finder/)** - Literature discovery and summarization
 - **[Discord Bot](docs/examples/discord-py-bot/)** - Discord integration example
 
@@ -26,6 +28,7 @@ Community-built applications including:
 
 ### 📚 [Integration Guides](docs/articles/)
 In-depth tutorials for advanced implementations:
+- Migrating from Sonar to the Agent API
 - Memory management patterns
 - OpenAI agents integration
 - Multi-modal implementations
@@ -50,7 +53,7 @@ Get your API key at [docs.perplexity.ai](https://docs.perplexity.ai/guides/getti
 
 ## Contributing
 
-Have a project built with Sonar API? We'd love to feature it! 
+Have a project built with the Agent API? We'd love to feature it! 
 
 - **[Submit an Example Tutorial](CONTRIBUTING.md#for-examples)**
 - **[Submit a Showcase Project](CONTRIBUTING.md#for-showcase-projects)**  
@@ -58,7 +61,8 @@ Have a project built with Sonar API? We'd love to feature it!
 
 ## Resources
 
-- **[Sonar API Documentation](https://docs.perplexity.ai/home)**
+- **[Agent API Documentation](https://docs.perplexity.ai/home)**
+- **[Migrate from Sonar](https://docs.perplexity.ai/home)**
 - **[API Playground](https://perplexity.ai/account/api/playground)**
 - **[Cookbook Documentation](https://docs.perplexity.ai/cookbook)**
 
