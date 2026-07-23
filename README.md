@@ -31,6 +31,7 @@ In-depth tutorials for advanced implementations:
 - Migrating from Sonar to the Agent API
 - Memory management patterns
 - OpenAI agents integration
+- [Deep Agents Launch Intelligence](docs/articles/deep-agents-launch-intelligence/) — multi-agent product-launch briefs built on the Perplexity Agent API (Deep Agents pattern: planner + sub-agents + workpapers)
 - Multi-modal implementations
 
 ## Quick Start
