@@ -1,0 +1,74 @@
+---
+title: Perplexity CLI 
+description: An open-source AI agent that brings the real-time intelligence of Perplexity AI to your command line, seamlessly integrating powerful models and tools into your daily workflow.
+sidebar_position: 1
+keywords: [perplexity, cli, sonar, ai, terminal, command-line, api, mcp, developer-tools]
+---
+
+# Project Title
+
+The Perplexity CLI provides AI-powered research and reasoning capabilities directly in your terminal. It leverages Perplexity's Sonar models to deliver real-time, citation-backed responses optimized for developer workflows, allowing you to use a lot of integrated functions and tools.
+
+## Features
+
+- Multiple Sonar models including pro, reasoning-pro, and deep-research variants
+- Built-in tools: File operations, shell commands, web fetching.
+- Extensible: MCP (Model Context Protocol) support for custom integrations.
+- Terminal-first: Designed for developers who live in the command line.
+
+
+## Prerequisites
+
+1. Node.js version 20 or higher 
+2. macOS, Linux or Windows
+3. A Perplexity API key (get one at https://www.perplexity.ai/settings/api)
+
+## Installation
+
+npm install -g @google/gemini-cli
+
+## Usage
+
+perplexity - opens interactive CLI with straightforward usage 
+
+
+## Code Explanation
+
+Written mostly in TS, JS is used for building, ESM, linting and some others thing.
+Node.js, docker, vitest for testing. 
+Ink and React for interactive cli - there is a lot of mocking tests,
+and so as integrating tests which i deleted from workflows cause perplexity. 
+
+1.  **CLI package (`packages/cli`):**
+    - **Purpose:** This contains the user-facing portion of Perplexity CLI, such as handling the initial user input, presenting the final output, and managing the overall user experience.
+    - **Key functions contained in the package:**
+      - [Input processing](./cli/commands.md)
+      - History management
+      - Display rendering
+      - [Theme and UI customization](./cli/themes.md)
+      - [CLI configuration settings](./cli/configuration.md)
+
+2.  **Core package (`packages/core`):**
+    - **Purpose:** This acts as the backend for Perplexity CLI. It receives requests sent from `packages/cli`, orchestrates interactions with the configured model API, and manages the execution of available tools.
+    - **Key functions contained in the package:**
+      - API client for communicating with the Perplexity AI API
+      - Prompt construction and management
+      - Tool registration and execution logic
+      - State management for conversations or sessions
+      - Server-side configuration
+
+3.  **Tools (`packages/core/src/tools/`):**
+    - **Purpose:** These are individual modules that extend the capabilities of the Perplexity model, allowing it to interact with the local environment (e.g., file system, shell commands, web fetching).
+    - **Interaction:** `packages/core` invokes these tools based on requests from the Perplexity model.
+
+## Links
+
+- [GitHub Repository](https://github.com/noQuli/perplexity-cli)
+
+## Limitations
+
+-Token caching effectiveness depends on context similarity between queries
+
+-MCP server tools require separate installation and configuration
+
+-API rate limits apply based on your Perplexity subscription tier
