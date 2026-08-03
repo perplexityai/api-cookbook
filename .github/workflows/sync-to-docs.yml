@@ -50,7 +50,8 @@ jobs:
           
       - name: Clear existing cookbook content
         run: |
-          rm -rf docs-repo/cookbook/* || true
+          mkdir -p docs-repo/cookbook
+          find docs-repo/cookbook -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           
       - name: Copy cookbook content to docs repository
         run: |
