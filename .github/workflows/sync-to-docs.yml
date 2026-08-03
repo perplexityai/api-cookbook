@@ -5,37 +5,53 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions: {}
+
+concurrency:
+  group: cookbook-sync
+  cancel-in-progress: false
+
 jobs:
   sync-cookbook:
+    name: Sync cookbook
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changes_made: ${{ steps.commit.outputs.changes_made }}
     steps:
       - name: Checkout cookbook repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
+          persist-credentials: false
           path: cookbook-repo
           
       - name: Checkout docs repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
-          repository: ${{ secrets.DOCS_REPO_NAME || 'ppl-ai/api-docs' }}
+          repository: ppl-ai/api-docs
           token: ${{ secrets.DOCS_REPO_TOKEN }}
+          persist-credentials: false
           path: docs-repo
           
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
-          cache-dependency-path: docs-repo/package.json
+          cache-dependency-path: docs-repo/package-lock.json
           
       - name: Install docs dependencies
+        env:
+          HUSKY: '0'
         run: |
           cd docs-repo
-          npm install
+          npm ci
           
       - name: Clear existing cookbook content
         run: |
-          rm -rf docs-repo/cookbook/* || true
+          mkdir -p docs-repo/cookbook
+          find docs-repo/cookbook -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           
       - name: Copy cookbook content to docs repository
         run: |
@@ -48,7 +64,7 @@ jobs:
           # Copy static assets if they exist
           if [ -d "cookbook-repo/static" ]; then
             mkdir -p docs-repo/cookbook/static
-            cp -r cookbook-repo/static/* docs-repo/cookbook/static/
+            cp -r cookbook-repo/static/. docs-repo/cookbook/static/
           fi
           
       - name: Generate cookbook navigation
@@ -64,26 +80,42 @@ jobs:
           git config --local user.name "Cookbook Sync Bot"
           
       - name: Commit and push changes
+        id: commit
+        env:
+          DOCS_REPO_TOKEN: ${{ secrets.DOCS_REPO_TOKEN }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SERVER_URL: ${{ github.server_url }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           cd docs-repo
           git add .
           if git diff --staged --quiet; then
             echo "No changes to commit"
-            echo "CHANGES_MADE=false" >> $GITHUB_ENV
+            echo "changes_made=false" >> "$GITHUB_OUTPUT"
           else
-            git commit -m "📚 Sync cookbook from ${{ github.repository }}@${{ github.sha }}
+            git commit -m "📚 Sync cookbook from $SOURCE_REPOSITORY@$SOURCE_SHA
 
             Updated cookbook content and navigation from community contributions.
             
-            Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
-            git push
-            echo "CHANGES_MADE=true" >> $GITHUB_ENV
+            Source: $SOURCE_SERVER_URL/$SOURCE_REPOSITORY/commit/$SOURCE_SHA"
+            docs_repo_auth="$(printf 'x-access-token:%s' "$DOCS_REPO_TOKEN" | base64 -w0)"
+            echo "::add-mask::$docs_repo_auth"
+            git -c "http.extraheader=AUTHORIZATION: basic $docs_repo_auth" push origin HEAD:main
+            echo "changes_made=true" >> "$GITHUB_OUTPUT"
           fi
-          
+
+  report-sync:
+    name: Report sync status
+    if: always()
+    needs: sync-cookbook
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # zizmor: ignore[undocumented-permissions] Commit comments require this permission.
+    steps:
       - name: Create deployment comment
-        if: env.CHANGES_MADE == 'true'
+        if: needs.sync-cookbook.result == 'success' && needs.sync-cookbook.outputs.changes_made == 'true'
         continue-on-error: true
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             try {
@@ -109,9 +141,11 @@ jobs:
             }
             
       - name: Report sync failure
-        if: failure()
+        if: needs.sync-cookbook.result != 'success'
         continue-on-error: true
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
             try {
@@ -125,7 +159,7 @@ jobs:
                 body: `❌ **Cookbook sync failed**
                 
                 There was an error syncing the cookbook content to the docs site. 
-                Please check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+                Please check the [workflow logs](${process.env.RUN_URL}) for details.
                 
                 The docs site may not reflect the latest cookbook changes until this is resolved.`
               });
@@ -136,8 +170,14 @@ jobs:
             
       - name: Log sync status
         if: always()
+        env:
+          CHANGES_MADE: ${{ needs.sync-cookbook.outputs.changes_made }}
+          SYNC_RESULT: ${{ needs.sync-cookbook.result }}
         run: |
-          if [ "${{ env.CHANGES_MADE }}" = "true" ]; then
+          if [ "$SYNC_RESULT" != "success" ]; then
+            echo "❌ COOKBOOK SYNC FAILED"
+            exit 1
+          elif [ "$CHANGES_MADE" = "true" ]; then
             echo "🎉 COOKBOOK SYNC SUCCESS!"
             echo "📚 Content synced to docs repository"
             echo "🔧 Navigation updated automatically"
@@ -145,4 +185,4 @@ jobs:
           else
             echo "ℹ️  No changes to sync"
             echo "📄 Cookbook content is already up to date"
-          fi 
+          fi
