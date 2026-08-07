@@ -9,7 +9,7 @@ A comprehensive collection of practical examples, integration guides, and commun
 ### 🛠️ [Examples](docs/examples/)
 Ready-to-run applications demonstrating real-world use cases:
 
-- **[Grounded Data Story with Kimi K3](docs/examples/grounded-data-story-kimi-k3/)** - Agent API + Kimi K3 for source-linked interactive data stories
+- **[Grounded Data Story with Kimi K3](docs/examples/grounded-data-story-kimi-k3/)** - Kimi K3 + live web search for durable, source-linked interactive data-story drafts
 - **[Equity Research Brief](docs/examples/equity-research-brief/)** - Agent API + `finance_search` for ticker-level research briefs
 - **[Finance Chart (Sandbox)](docs/examples/finance-chart-sandbox/)** - Agent API + `finance_search` + `sandbox` to chart a stock's price history
 - **[Fact Checker CLI](docs/examples/fact-checker-cli/)** - Verify claims and articles for accuracy

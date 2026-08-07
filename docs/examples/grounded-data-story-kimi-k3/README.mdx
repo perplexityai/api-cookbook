@@ -1,59 +1,94 @@
 ---
 title: Grounded Data Story with Kimi K3
-description: Research a topic and generate a source-linked, self-contained interactive data story with Kimi K3 and the Perplexity Agent API.
-sidebar_position: 19
-keywords: [agent-api, kimi-k3, web-search, background-mode, data-visualization, html, svg, citations]
-products: [agent-api]
-categories: [deep-research, orchestration]
+description: Turn a topic into a portable, source-linked interactive data-story draft with Kimi K3, live web search, and durable Agent API execution.
+sidebar_position: 9
+keywords: [agent-api, kimi-k3, moonshot, web-search, background, html, svg, data-visualization, grounding, reasoning-effort]
 ---
 
 # Grounded Data Story with Kimi K3
 
-Turn a topic into a researched, source-linked interactive data-story draft with
-one durable [Perplexity Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart)
-request. Kimi K3 searches the web, synthesizes the evidence, and hand-codes a
-self-contained HTML page with statistic cards, SVG charts, narrative, and
-citations.
+A command-line tool that turns any topic into a polished, source-linked
+interactive data-story draft with Perplexity's
+[Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart) and
+[`perplexity/kimi-k3`](https://docs.perplexity.ai/docs/agent-api/models#moonshot-ai).
 
-This pattern is useful when you want more than a text answer. Kimi K3 provides
-the long-horizon research-to-code execution; the Agent API provides live search,
-structured source metadata, a resumable response ID, usage details, and exact
-provider-reported cost.
+Kimi K3 researches the topic with live `web_search`, reasons across the
+evidence, and hand-codes a self-contained HTML page with animated statistics,
+inline SVG charts, narrative, and citations. The CLI makes the long-running
+job durable, validates the page, and inserts source URLs from structured API
+results rather than trusting URLs written by the model.
 
 ## Features
 
-- One Agent API run handles research, synthesis, visualization, and HTML
-- Live `web_search` grounds the draft in current sources
-- Background mode makes a long generation resumable without another paid call
-- Numeric search-result IDs connect every statistic and chart mark to evidence
-- Source URLs are injected from structured API results, not copied by the model
-- The output is one portable HTML file with no external assets or network calls
-- Validation catches unsafe markup and common SVG, motion, and sizing failures
+- One submitted Agent API job handles research, synthesis, data visualization,
+  and front-end implementation
+- Live `web_search` grounds the draft in current source material
+- Kimi K3 builds all HTML, CSS, JavaScript, and SVG without a chart library
+- Durable background mode saves the response ID immediately and polls the same
+  run under a real local deadline without resubmitting the paid request
+- `quick` and `showcase` profiles balance latency, cost, and polish
+- Every statistic and plotted value must reference a numeric API search-result
+  ID before the artifact can be saved
+- Canonical titles, dates, and URLs are injected from API metadata
+- Self-contained output works offline and receives a restrictive Content
+  Security Policy
+- A sanitized JSON receipt records request settings, model, response ID,
+  searches, sources, usage, cumulative client latency, per-attempt history, and
+  provider-reported cost
+- The development test suite exercises the pinned SDK serializer and recovery
+  path without network calls; this standalone page embeds that exact verified
+  script
+
+This pattern combines two capabilities that are usually separate: Kimi K3
+provides long-horizon research-to-code execution, while Perplexity provides
+live search, tool orchestration, durable state, provenance metadata, and cost
+reporting. The result is an inspectable HTML artifact rather than a black-box
+answer.
 
 ## Prerequisites
 
-- Python 3.10 or newer
+- Python 3.10 or newer (tested with Python 3.12)
 - A [Perplexity API key](https://www.perplexity.ai/settings/api)
-- Internet access for the live Agent API request
+- Internet access for live Agent API runs
 
 ## Installation
 
+This is a self-contained tutorial. Copy the complete Python block under
+[Full Code](#full-code) into a local file named `data_story.py`, then create
+an isolated environment and install the exact SDK version used for
+verification:
+
 ```bash
+python3 --version
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install perplexityai==0.43.1
 ```
 
-Set the key in your environment. Do not paste it into the script or commit it.
+Python 3.10 or newer is required. The pinned dependency keeps request
+serialization and background-response behavior reproducible.
+
+## API Key Setup
+
+Set the key only in your environment; do not paste it into the script or commit
+it to source control.
 
 ```bash
 export PERPLEXITY_API_KEY="your-api-key-here"
 ```
 
+The Perplexity SDK reads `PERPLEXITY_API_KEY` automatically.
+
 ## Quick Start
 
-The code blocks below form one script. Copy them in order into `data_story.py`,
-then run:
+After saving the Full Code block as `data_story.py`, create a story with the
+default `quick` profile:
+
+```bash
+python data_story.py "The rise of open-weights AI models"
+```
+
+Create a higher-budget showcase draft at an explicit path:
 
 ```bash
 python data_story.py \
@@ -62,495 +97,30 @@ python data_story.py \
   --output open-weights.html
 ```
 
-Use `--dry-run` to inspect the request without an API call or charge:
+The generated HTML is a **source-linked draft**, not an automatic publication
+system. Review every claim against its cited source before publishing.
+
+## Usage
+
+```bash
+python data_story.py TOPIC \
+  [--profile {quick,showcase}] \
+  [--effort {minimal,low,medium,high,xhigh,max}] \
+  [--max-output-tokens N] \
+  [--max-steps N] \
+  [--wait-timeout SECONDS] \
+  [--output PATH] \
+  [--receipt PATH]
+```
+
+Inspect the exact JSON-compatible request without calling the API:
 
 ```bash
 python data_story.py "The rise of open-weights AI models" --dry-run
 ```
 
-## Code Walkthrough
-
-### 1. Define the artifact contract
-
-The prompt separates research from construction. It requires source IDs rather
-than model-written URLs, and it incorporates several practical browser-QA
-guardrails: cited hero claims, consistent chart scales, focusable data marks,
-CSS-only animation, scoped SVG sizing, and reduced-motion support.
-
-```python
-from __future__ import annotations
-
-import argparse
-from datetime import datetime, timezone
-from html import escape
-import json
-import os
-from pathlib import Path
-import re
-import time
-from typing import Any
-from urllib.parse import urlsplit
-
-from perplexity import APIStatusError, Perplexity
-
-
-MODEL = "perplexity/kimi-k3"
-PENDING = {"queued", "in_progress"}
-SOURCE_PLACEHOLDER = "<!-- PERPLEXITY_SOURCES -->"
-EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"]
-PROFILES = {
-    "quick": {"effort": "medium", "max_output_tokens": 32768, "max_steps": 8},
-    "showcase": {"effort": "high", "max_output_tokens": 65536, "max_steps": 20},
-}
-
-SYSTEM_PROMPT = (
-    "You are a data journalist and front-end engineer. Research with web_search, "
-    "then write a beautiful self-contained HTML data story. Every externally "
-    "verifiable claim must use a web_search result from this run."
-)
-
-TASK_PROMPT = """\
-Create a single-page interactive data story about: {topic}
-
-Research first:
-- Run several focused web searches.
-- Collect 10-15 recent numbers, dates, rankings, and growth rates.
-- Track the numeric search-result ID supporting every fact.
-- Prefer recent primary sources and preserve each source's exact terminology.
-
-Then write one complete HTML document:
-- Add a hero, takeaway, and date range. Cite every factual hero claim.
-- Add exactly 3-4 elements with class="stat-card". Each needs a numeric
-  data-source-id and a matching #source-N citation.
-- Add at least two hand-coded SVG charts inside <figure> elements. Each chart
-  needs role="img", an accessible <title>, gridlines, axis labels, and plotted
-  values with class="data-mark", tabindex="0", a numeric data-source-id, and a
-  nested <title> tooltip.
-- Derive every mark coordinate from the displayed axis scale. Extend the domain
-  so every mark, label, and stroke remains inside the SVG viewBox.
-- Add 2-3 cited narrative paragraphs. Label interpretation as analysis.
-- Put this exact placeholder where the source list belongs:
-  <!-- PERPLEXITY_SOURCES -->
-
-Use inline CSS and JavaScript only. Do not use external libraries, assets,
-URLs, fetch, XMLHttpRequest, WebSocket, EventSource, iframes, or forms. Do not
-use SVG SMIL elements such as <animate>; use CSS-only animation and disable both
-animation and transition under prefers-reduced-motion: reduce. Scope responsive
-chart sizing to figure svg, never every svg, and keep chart text readable at a
-390px viewport.
-
-Return a 2-3 sentence summary followed by exactly one document beginning with
-<!DOCTYPE html> and ending with </html>. Do not use Markdown fences.
-"""
-```
-
-### 2. Build the Agent API request
-
-Both profiles set an explicit output ceiling rather than reserving that many
-tokens. The pinned SDK supports the documented `max` effort through
-`extra_body`; all other effort levels use the typed `reasoning` field.
-
-```python
-def build_request(topic: str, profile: str, effort: str | None = None) -> dict[str, Any]:
-    config = dict(PROFILES[profile])
-    if effort:
-        config["effort"] = effort
-
-    request: dict[str, Any] = {
-        "model": MODEL,
-        "background": True,
-        "store": True,
-        "instructions": SYSTEM_PROMPT,
-        "input": TASK_PROMPT.format(topic=topic),
-        "tools": [{"type": "web_search"}],
-        "max_output_tokens": config["max_output_tokens"],
-        "max_steps": config["max_steps"],
-    }
-    if config["effort"] == "max":
-        request["extra_body"] = {"reasoning": {"effort": "max"}}
-    else:
-        request["reasoning"] = {"effort": config["effort"]}
-    return request
-
-
-def wire_preview(request: dict[str, Any]) -> dict[str, Any]:
-    preview = {key: value for key, value in request.items() if key != "extra_body"}
-    preview.update(request.get("extra_body", {}))
-    return preview
-```
-
-### 3. Submit once, checkpoint the response ID, and poll
-
-The create call has automatic retries disabled. Once an ID is returned, the
-script writes it to the receipt before polling. If local waiting stops, retrieve
-that same response with `--resume`; do not blindly create another paid run.
-
-```python
-def as_dict(value: Any) -> dict[str, Any]:
-    if isinstance(value, dict):
-        return value
-    return value.model_dump(mode="json")
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def write_receipt(path: Path, receipt: dict[str, Any]) -> None:
-    receipt["updated_at"] = utc_now()
-    text = json.dumps(receipt, indent=2, ensure_ascii=False) + "\n"
-    api_key = os.environ.get("PERPLEXITY_API_KEY")
-    if api_key:
-        text = text.replace(api_key, "[REDACTED]")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
-
-
-def checkpoint(response: Any, receipt: dict[str, Any], receipt_path: Path) -> None:
-    data = as_dict(response)
-    receipt["response_id"] = data.get("id", receipt.get("response_id"))
-    receipt["provider_status"] = data.get("status")
-    receipt["model"] = data.get("model", receipt.get("model"))
-    if data.get("usage") is not None:
-        receipt["usage"] = data["usage"]
-    write_receipt(receipt_path, receipt)
-
-
-def wait_for_completion(
-    client: Perplexity,
-    response_id: str,
-    receipt: dict[str, Any],
-    receipt_path: Path,
-    deadline: float,
-) -> Any:
-    poll_client = client.with_options(max_retries=0)
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            receipt["status"] = "waiting"
-            write_receipt(receipt_path, receipt)
-            raise RuntimeError(
-                f"Local wait ended. Resume {response_id}; do not submit a new run."
-            )
-
-        response = poll_client.responses.retrieve(
-            response_id,
-            timeout=min(30.0, remaining),
-        )
-        checkpoint(response, receipt, receipt_path)
-        status = str(as_dict(response).get("status", "unknown"))
-        print(f"  {status}")
-
-        if status == "completed":
-            return response
-        if status not in PENDING:
-            raise RuntimeError(f"Agent run ended with status: {status}")
-        time.sleep(min(3.0, remaining))
-
-
-def submit_background(
-    client: Perplexity,
-    request: dict[str, Any],
-    receipt: dict[str, Any],
-    receipt_path: Path,
-    wait_timeout: float,
-) -> Any:
-    started = time.monotonic()
-    deadline = started + wait_timeout
-    try:
-        response = client.with_options(max_retries=0).responses.create(
-            timeout=min(60.0, wait_timeout),
-            **request,
-        )
-    except APIStatusError as error:
-        if 400 <= error.status_code < 500:
-            raise
-        receipt["status"] = "submission_unknown"
-        write_receipt(receipt_path, receipt)
-        raise RuntimeError(
-            "The server failed after create was sent; do not auto-retry."
-        ) from error
-    except Exception:
-        receipt["status"] = "submission_unknown"
-        write_receipt(receipt_path, receipt)
-        raise RuntimeError(
-            "Create failed before a response ID was confirmed; do not auto-retry."
-        )
-
-    checkpoint(response, receipt, receipt_path)
-    data = as_dict(response)
-    response_id = data.get("id")
-    if not response_id:
-        raise RuntimeError("Background create returned no response ID.")
-    if data.get("status") == "completed":
-        return response
-    return wait_for_completion(client, response_id, receipt, receipt_path, deadline)
-```
-
-### 4. Extract the HTML and inject authoritative sources
-
-Kimi K3 writes only `#source-N` fragments. The script resolves those IDs against
-the structured `search_results` returned by the API and injects the canonical
-title, date, and URL. The compact validator below deliberately rejects the
-failure modes most likely to make a polished page unsafe or misleading.
-
-```python
-def response_text_and_sources(response: Any) -> tuple[str, list[str], list[dict[str, Any]]]:
-    text_parts: list[str] = []
-    queries: list[str] = []
-    results: list[dict[str, Any]] = []
-
-    for item in as_dict(response).get("output", []):
-        if item.get("type") == "search_results":
-            queries.extend(str(query) for query in item.get("queries", []))
-            results.extend(item.get("results", []))
-        if item.get("type") == "message":
-            for block in item.get("content", []):
-                if block.get("type") == "output_text":
-                    text_parts.append(str(block.get("text", "")))
-    return "".join(text_parts), list(dict.fromkeys(queries)), results
-
-
-def extract_html(text: str) -> tuple[str, str]:
-    starts = list(re.finditer(r"<!doctype\s+html\b[^>]*>", text, re.I))
-    ends = list(re.finditer(r"</html\s*>", text, re.I))
-    if len(starts) != 1 or len(ends) != 1 or text[ends[0].end():].strip():
-        raise ValueError("Expected exactly one complete HTML document.")
-    summary = text[:starts[0].start()].strip()
-    if re.search(r"(?m)^---\s*$", summary):
-        summary = re.split(r"(?m)^---\s*$", summary)[-1].strip()
-    return summary, text[starts[0].start():ends[0].end()]
-
-
-def authoritative_sources(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
-    sources: dict[str, dict[str, Any]] = {}
-    for result in results:
-        source_id = str(result.get("id", ""))
-        url = str(result.get("url", ""))
-        parsed = urlsplit(url)
-        if not source_id.isdigit() or parsed.scheme not in {"http", "https"}:
-            raise ValueError("Search results contained an invalid ID or URL.")
-        if source_id in sources and sources[source_id].get("url") != url:
-            raise ValueError(f"Search-result ID {source_id} mapped to two URLs.")
-        sources[source_id] = result
-    return sources
-
-
-def validate_and_inject(document: str, results: list[dict[str, Any]]) -> str:
-    if document.count(SOURCE_PLACEHOLDER) != 1:
-        raise ValueError("Expected exactly one source placeholder.")
-
-    banned = [
-        r"<script\b[^>]*\bsrc\s*=",
-        r"<link\b",
-        r"<(?:iframe|object|embed|form)\b",
-        r"<(?:animate|animatemotion|animatetransform|set)\b",
-        r"\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon)\s*\(",
-    ]
-    if any(re.search(pattern, document, re.I) for pattern in banned):
-        raise ValueError("The document contains unsafe or unsupported markup.")
-    if re.search(
-        r"(?:^|})\s*svg\s*(?:,[^{]*)?\{[^}]*\bwidth\s*:\s*100\s*%",
-        document,
-        re.I | re.S,
-    ):
-        raise ValueError("Scope width:100% to figure svg, not every svg.")
-    if not re.search(r"prefers-reduced-motion\s*:\s*reduce", document, re.I):
-        raise ValueError("Reduced-motion CSS is required.")
-
-    stat_cards = len(re.findall(r"\bclass=[\"'][^\"']*\bstat-card\b", document, re.I))
-    figures = len(re.findall(r"<figure\b", document, re.I))
-    if not 3 <= stat_cards <= 4 or figures < 2:
-        raise ValueError("Expected 3-4 stat cards and at least two figures.")
-
-    mark_pattern = re.compile(
-        r"<[^>]*\bclass\s*=\s*(?P<q>[\"'])[^\"']*\bdata-mark\b[^\"']*(?P=q)[^>]*>",
-        re.I,
-    )
-    marks = [match.group(0) for match in mark_pattern.finditer(document)]
-    if not marks or any(not re.search(r"\btabindex=[\"']0[\"']", mark, re.I) for mark in marks):
-        raise ValueError("Every chart data mark must be keyboard focusable.")
-
-    for href in re.findall(r"\bhref=[\"']([^\"']+)[\"']", document, re.I):
-        if not href.startswith("#"):
-            raise ValueError("The model must not write external URLs.")
-
-    citation_ids = re.findall(r"href=[\"']#source-(\d+)[\"']", document, re.I)
-    data_ids = re.findall(r"data-source-id=[\"'](\d+)[\"']", document, re.I)
-    used_ids = list(dict.fromkeys([*citation_ids, *data_ids]))
-    sources = authoritative_sources(results)
-    missing = sorted(set(used_ids) - set(sources))
-    if not used_ids or missing:
-        raise ValueError(f"Unknown or missing source IDs: {missing}")
-
-    rows = []
-    for source_id in used_ids:
-        source = sources[source_id]
-        title = escape(str(source.get("title") or source["url"]))
-        url = escape(str(source["url"]), quote=True)
-        date = escape(str(source.get("date") or source.get("last_updated") or ""))
-        rows.append(
-            f'<li id="source-{source_id}"><a href="{url}" target="_blank" '
-            f'rel="noopener noreferrer">{title}</a> {date}</li>'
-        )
-
-    source_section = (
-        '<section id="sources"><h2>Sources</h2><ol>'
-        + "".join(rows)
-        + "</ol></section>"
-    )
-    document = document.replace(SOURCE_PLACEHOLDER, source_section)
-
-    csp = (
-        '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; '
-        "script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; "
-        "connect-src 'none'; font-src 'none'; object-src 'none'; frame-src 'none'\">"
-    )
-    head = re.search(r"<head\b[^>]*>", document, re.I)
-    if not head:
-        raise ValueError("The document is missing <head>.")
-    return document[:head.end()] + csp + document[head.end():]
-
-
-def provider_cost(response: Any) -> float | None:
-    usage = as_dict(response).get("usage") or {}
-    total = (usage.get("cost") or {}).get("total_cost")
-    return float(total) if total is not None else None
-```
-
-### 5. Add a resumable CLI
-
-The CLI records each attempt separately, so a fast GET-only resume is not
-mistaken for the full generation latency.
-
-```python
-def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("topic", nargs="?")
-    parser.add_argument("--resume", metavar="RESPONSE_ID")
-    parser.add_argument("--profile", choices=sorted(PROFILES), default="quick")
-    parser.add_argument("--effort", choices=EFFORT_LEVELS)
-    parser.add_argument("--output", default="data-story.html")
-    parser.add_argument("--receipt")
-    parser.add_argument("--wait-timeout", type=float, default=3600)
-    parser.add_argument("--dry-run", action="store_true")
-    args = parser.parse_args()
-
-    if bool(args.topic) == bool(args.resume):
-        parser.error("Provide exactly one of TOPIC or --resume RESPONSE_ID.")
-
-    output_path = Path(args.output)
-    receipt_path = Path(args.receipt or f"{output_path}.receipt.json")
-    request = build_request(args.topic, args.profile, args.effort) if args.topic else None
-
-    if args.dry_run:
-        if not request:
-            parser.error("--dry-run requires a topic.")
-        print(json.dumps(wire_preview(request), indent=2))
-        return 0
-    if not os.environ.get("PERPLEXITY_API_KEY"):
-        parser.error("Set PERPLEXITY_API_KEY in the environment.")
-
-    if args.resume and receipt_path.exists():
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-        receipt.pop("client_error", None)
-    else:
-        receipt = {
-            "created_at": utc_now(),
-            "topic": args.topic,
-            "request": wire_preview(request) if request else None,
-            "response_id": args.resume,
-        }
-
-    started = time.monotonic()
-    attempt = {
-        "mode": "resume" if args.resume else "submit",
-        "started_at": utc_now(),
-        "status": "running",
-    }
-    receipt.setdefault("attempts", []).append(attempt)
-    write_receipt(receipt_path, receipt)
-
-    try:
-        with Perplexity() as client:
-            if args.resume:
-                response = wait_for_completion(
-                    client,
-                    args.resume,
-                    receipt,
-                    receipt_path,
-                    time.monotonic() + args.wait_timeout,
-                )
-            else:
-                assert request is not None
-                response = submit_background(
-                    client, request, receipt, receipt_path, args.wait_timeout
-                )
-                receipt["background_elapsed_seconds"] = round(
-                    time.monotonic() - started, 3
-                )
-
-        data = as_dict(response)
-        if data.get("model") != MODEL:
-            raise ValueError(f"Expected {MODEL}, received {data.get('model')}.")
-
-        text, queries, results = response_text_and_sources(response)
-        summary, raw_html = extract_html(text)
-        final_html = validate_and_inject(raw_html, results)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_path.write_text(final_html, encoding="utf-8")
-
-        cost = provider_cost(response)
-        receipt.update({
-            "status": "completed",
-            "queries": queries,
-            "sources": results,
-            "provider_cost": cost,
-            "artifact": {
-                "path": str(output_path),
-                "bytes": len(final_html.encode("utf-8")),
-            },
-        })
-        attempt["status"] = "completed"
-        receipt.pop("client_error", None)
-    except Exception as error:
-        if receipt.get("status") not in {"waiting", "submission_unknown"}:
-            receipt["status"] = "failed"
-        receipt["client_error"] = {
-            "type": type(error).__name__,
-            "message": str(error),
-        }
-        attempt["status"] = receipt["status"]
-        attempt["error"] = receipt["client_error"]
-        raise
-    finally:
-        elapsed = round(time.monotonic() - started, 3)
-        attempt["finished_at"] = utc_now()
-        attempt["elapsed_seconds"] = elapsed
-        receipt["last_client_attempt_elapsed_seconds"] = elapsed
-        receipt["client_elapsed_seconds"] = round(
-            sum(float(item.get("elapsed_seconds", 0)) for item in receipt["attempts"]),
-            3,
-        )
-        write_receipt(receipt_path, receipt)
-
-    cost_text = "unavailable" if cost is None else f"${cost:.5f}"
-    print(summary)
-    print(f"Saved {output_path} — cost {cost_text}")
-    print(f"Receipt {receipt_path}")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-```
-
-## Resume an Existing Run
-
-If the process stops after receiving a response ID, use the ID and the same
-receipt. This performs retrieval only; it does not create another generation.
+If a run outlives the local process, resume the same response instead of
+creating another paid run:
 
 ```bash
 python data_story.py \
@@ -559,58 +129,1513 @@ python data_story.py \
   --receipt open-weights.html.receipt.json
 ```
 
-## Example Output (Observed Live Run)
+Keep the same `--receipt` path when resuming to preserve the original request,
+archive earlier client errors with their attempt, and append resume history.
+The receipt distinguishes total client time from the most recent attempt and,
+for a newly submitted run, records the time spent reaching provider completion.
+The default receipt path is `<output>.receipt.json`.
 
-The following is a real high-effort mechanics test from August 6, 2026. The API
-run completed, but the generated page remained a draft and required the visual
-and editorial review described below.
+## Configuration Reference
+
+| Setting | `quick` (default) | `showcase` |
+| --- | ---: | ---: |
+| K3 reasoning effort | `medium` | `high` |
+| Output-token ceiling | 32,768 | 65,536 |
+| Maximum agent steps | 8 | 20 |
+
+Override any profile value directly:
+
+```bash
+python data_story.py "AI inference economics" \
+  --effort xhigh \
+  --max-output-tokens 48000 \
+  --max-steps 14
+```
+
+`max_output_tokens` is an explicit ceiling, not a required reservation or a
+prediction of actual output. Billing follows the work the run actually
+performs; consult [current pricing](https://docs.perplexity.ai/docs/getting-started/pricing)
+before high-budget runs.
+
+All documented K3 effort values are preserved. In `perplexityai==0.43.1`, the
+generated type omits `max`, so the script sends only that value through the
+SDK's supported `extra_body` pass-through. Other effort levels use the typed
+`reasoning` field.
+
+## Dry Run Request Preview
+
+`--dry-run` is deterministic and does not use an API key or spend credits. An
+abridged request preview looks like this:
+
+```json
+{
+  "model": "perplexity/kimi-k3",
+  "background": true,
+  "store": true,
+  "max_output_tokens": 32768,
+  "max_steps": 8,
+  "tools": [
+    {
+      "type": "web_search"
+    }
+  ],
+  "reasoning": {
+    "effort": "medium"
+  }
+}
+```
+
+A live completed run writes two files:
 
 ```text
-Model: perplexity/kimi-k3
-Background completion: approximately 145 seconds
-Search queries: 9
-Returned search results: 45
-Linked sources: 18
-Input / output / total tokens: 21,838 / 10,155 / 31,993
-Provider-reported cost: $0.20046
+data-story-<timestamp>.html
+data-story-<timestamp>.html.receipt.json
 ```
+
+The terminal reports the saved size, source-link count, and a formatted
+provider-reported cost. Its phrase `verified source links` means that each used
+source ID and URL matched structured API results; it does not mean the cited
+claim was fact-checked. The receipt retains the raw provider value.
+If the provider omits cost data, the CLI reports `unavailable` rather than
+displaying a false `$0.0000`. `client_elapsed_seconds` is cumulative across
+recorded attempts; `last_client_attempt_elapsed_seconds` identifies a fast
+resume/finalization pass without misrepresenting it as full generation latency.
+
+## Example Output (truncated)
+
+On a successful run, terminal output has this shape. This is an illustrative
+format example; query count, latency, linked sources, and cost vary by topic and
+run.
+
+```text
+Building a data story: The rise of open-weights AI models (showcase, K3 effort: high)
+  queued · 0s elapsed
+  searched: ...
+  in_progress · ...s elapsed
+  completed · ...s elapsed
+
+<2-3 sentence model summary>
+
+Saved: open-weights.html (... KB, ... verified source links) cost $...
+Receipt: open-weights.html.receipt.json
+```
+
+## Observed Live Execution
+
+The exact script embedded below was exercised against the live Agent API on
+August 7, 2026 UTC (August 6 in US Pacific time). One paid background `POST`
+was submitted, automatic create retries were disabled, and the same response
+ID was polled to completion.
+
+| Observed field | Value |
+| --- | ---: |
+| Model | `perplexity/kimi-k3` |
+| Reasoning effort | `high` |
+| Provider status | `completed` |
+| End-to-end background time | 522.16 seconds |
+| Search queries / `search_web` invocations | 11 / 4 |
+| Returned results / linked sources | 60 / 15 |
+| Input / cache-read / output tokens | 28,445 / 10,240 / 27,168 |
+| Total tokens | 55,613 |
+| Generated HTML | 36,154 bytes |
+| Input / cache-read / output cost | $0.05462 / $0.00307 / $0.40752 |
+| Tool-call cost | $0.01000 |
+| Provider-reported total cost | **$0.47521** |
+| Paid create requests / retries | 1 / 0 |
+
+The structural and browser checks passed: four statistic cards, three SVG
+charts, seven focusable data marks, canonical source injection, no external
+assets or background requests, no console warnings or errors, no horizontal
+overflow at 1,440px or 390px, and no API-key leakage.
+
+The generated page still failed publication-level editorial review. Its date
+chip omitted earlier plotted years, one chart presented a period average as a
+late-period endpoint, one sentence claimed that every major US lab shipped
+open weights, one sentence changed a download-share finding into a model-count
+claim, and the generated wrapper produced two visible Sources headings. These
+findings are intentionally reported here: API completion and structural
+grounding produce an inspectable draft, not an automatic fact-check or
+publication guarantee.
+
+> This record proves that the Agent API request completed and the CLI saved an
+> artifact. It does not certify factual accuracy, chart interpretation,
+> accessibility, or publication readiness.
+
+Latency, search work, token use, and cost vary by topic and run. This observed
+receipt is evidence that the workflow executed successfully, not a benchmark
+or pricing promise.
+
+## Code Walkthrough
+
+1. The CLI builds one Agent API request with `web_search`, a K3 effort level,
+   an output ceiling, and a maximum number of agent steps.
+2. It submits once with `background=True` and `store=True`, with automatic
+   retries disabled for the create call.
+3. The background create response returns an ID immediately; the CLI writes it
+   to the receipt before doing anything else.
+4. The CLI polls `client.responses.retrieve(response_id)` with bounded request
+   timeouts and explicit backoff. Status changes and newly visible search
+   queries are printed without holding a long-lived stream open.
+5. K3 labels every statistic card and SVG data mark with a numeric result ID and
+   leaves one `PERPLEXITY_SOURCES` placeholder.
+6. On completion, the CLI validates the document, rejects clipped chart marks
+   and reduced-motion-unsafe SVG animation, matches every used ID against
+   `response.output` search results, injects authoritative source links and a
+   Content Security Policy, then writes the HTML atomically.
+
+The only success status is `completed`. Pending statuses are `queued` and
+`in_progress`; every other status is treated as a terminal non-success so schema
+drift cannot create an infinite polling loop.
+
+If the create connection fails before any response ID arrives, the submission
+outcome is ambiguous. The CLI records `submission_unknown` and deliberately
+does not retry. Check your API activity before deciding whether to submit again.
+
+### Source-link contract
+
+K3 never needs to reproduce external URLs. The prompt requires citation
+fragments such as `#source-3` and `data-source-id="3"`; the CLI inserts the URL
+for result `3` from the API's structured `search_results` output.
+
+The validator rejects incomplete documents, unknown source IDs, model-written
+external URLs, remote assets, frames, active forms, network-capable JavaScript,
+conflicting source mappings, non-focusable chart marks, SVG SMIL animation, and
+simple mark geometry outside a chart's `viewBox`. It also rejects global
+`svg { width: 100% }` rules that can accidentally turn small interface icons
+into page-sized graphics. This proves structural source linkage and catches
+common rendering failures, not semantic entailment or every possible scale
+error: a human must still verify that the prose and chart geometry correctly
+interpret each source.
 
 ## Prompting Guidance
 
-- Ask for a business or editorial outcome, then define a mechanical artifact
-  contract. Kimi K3 is strongest when it can research and build in one run.
-- Require a numeric result ID for every factual element. Inject canonical URLs
-  from structured API output after generation.
-- Preserve source wording and scope. A citation does not prevent the surrounding
-  sentence from overstating the evidence.
-- Tell the model to compute chart coordinates from the displayed scale and to
-  check the maximum value before returning the page.
-- Keep CSS animation subtle and prohibit SVG SMIL so reduced-motion preferences
-  work consistently.
+- Keep research and artifact construction in one explicit two-phase prompt so
+  K3 can connect source IDs to the HTML it writes.
+- Ask for exact source terminology and prohibit inferred scope or rhetorical
+  comparisons. A citation can exist while the surrounding claim still
+  overstates what the source establishes.
+- Specify the chart contract mechanically: numeric `data-source-id`, matching
+  citation, focusable simple geometry, a shared axis scale, visible bounds, and
+  a tooltip for every mark.
+- Require CSS-only animation plus a reduced-motion media query. SVG SMIL
+  animation is deliberately rejected because CSS cannot reliably disable it.
+- Scope responsive sizing to `figure svg`; never apply chart dimensions to
+  every SVG on the page.
+- Treat output as a draft. The validator checks structure, provenance wiring,
+  and common rendering failures; editorial and numeric review remain required.
 
 ## Pricing
 
-Cost depends on model tokens, effort, tool use, and search work. The 65,536 value
-in the `showcase` profile is an output ceiling, not a reservation or estimate.
-Use `--dry-run` before paid execution, submit once, and preserve the response ID.
-See [current Perplexity pricing](https://docs.perplexity.ai/docs/getting-started/pricing).
+Agent API cost varies with the selected model, input and output tokens, tool
+calls, reasoning effort, and search work. `--dry-run` makes no API call. For a
+paid run, submit once, preserve the response ID, and resume the same background
+response if local waiting ends.
+
+The receipt records the provider's raw cost breakdown when available. Review
+the [current pricing page](https://docs.perplexity.ai/docs/getting-started/pricing)
+before running the `showcase` profile; the 65,536-token setting is only an output
+ceiling, not a reservation or cost estimate.
+
+## Full Code
+
+Save this complete block as `data_story.py`. It is byte-for-byte identical to
+the implementation used for the offline verification and live paid run
+reported above.
+
+```python
+"""Grounded Data Story — Kimi K3 + Perplexity Agent API.
+
+One durable agent run: Kimi K3 researches a topic with live web_search,
+then writes a self-contained interactive HTML data story. The CLI preserves
+the background response ID, polls under a local deadline, validates the
+artifact, injects authoritative API source links, and records exact usage.
+
+Usage:
+    python data_story.py "The rise of open-weights AI models"
+    python data_story.py "Global EV adoption" --profile showcase --output ev.html
+    python data_story.py --resume resp_abc123 --output recovered.html
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+from html import escape
+from html.parser import HTMLParser
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import sys
+import tempfile
+import time
+from typing import Any, Callable, Iterable
+from urllib.parse import urlsplit
+
+import httpx
+from perplexity import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    InternalServerError,
+    Perplexity,
+    RateLimitError,
+)
+
+
+MODEL = "perplexity/kimi-k3"
+EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"]
+PROFILES = {
+    "quick": {"effort": "medium", "max_output_tokens": 32768, "max_steps": 8},
+    "showcase": {"effort": "high", "max_output_tokens": 65536, "max_steps": 20},
+}
+PENDING_STATUSES = {"queued", "in_progress"}
+SOURCE_PLACEHOLDER = "<!-- PERPLEXITY_SOURCES -->"
+POLL_INTERVAL_SECONDS = 3.0
+POLL_RETRY_ATTEMPTS = 4
+DEFAULT_WAIT_TIMEOUT_SECONDS = 3600
+MIN_CITED_SOURCES = 3
+
+CSP_CONTENT = (
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+    "img-src data:; connect-src 'none'; font-src 'none'; media-src 'none'; "
+    "object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+)
+CSP_META = (
+    '<meta http-equiv="Content-Security-Policy" '
+    f'content="{CSP_CONTENT}">'
+)
+
+STORY_SYSTEM = (
+    "You are a data journalist and front-end engineer. Research with web_search, "
+    "then design and hand-code a beautiful, self-contained interactive HTML data "
+    "story. Every externally verifiable factual claim must be supported by a "
+    "web_search result from this run; never rely on memory for facts."
+)
+
+STORY_TASK = f"""\
+Create a single-page interactive data story about: {{topic}}
+
+Phase 1 - Research (web_search):
+Run several focused searches. Collect 10-15 concrete, recent facts and figures:
+numbers, dates, rankings, and growth rates. Track the numeric result ID and
+publication date for each fact. Prefer primary sources published within the
+last 12 months. If sources disagree, use the most recent authoritative figure.
+
+Phase 2 - Build (write the code yourself):
+Design one polished, self-contained HTML file. Keep all CSS and JavaScript
+inline; use no external libraries, assets, or network requests. It must include:
+
+1. A hero header with a title, one-line takeaway, and covered date range. Put
+   inline citations after every factual claim in the takeaway.
+2. Exactly 3-4 key-stat cards. Give each card class="stat-card" and the
+   supporting result ID as data-source-id="N". Put the matching #source-N
+   citation link inside that same card.
+3. At least two hand-coded SVG charts with labels, gridlines, and hover
+   tooltips. Put each SVG inside its own <figure>. Give the SVG role="img", an
+   accessible <title>, gridlines with class="gridline", and at least two axis
+   labels with class="axis-label". Give every plotted value class="data-mark",
+   tabindex="0", its supporting result ID as data-source-id="N", and a nested
+   <title> tooltip. Use only untransformed circle, ellipse, rect, or line
+   primitives for each data mark. Add a <figcaption> whose citations cover every
+   result ID plotted in that chart. Derive every mark coordinate from the same
+   scale shown by the axis; extend the axis domain so all marks, labels, and
+   strokes remain visibly inside the SVG viewBox. Double-check the maximum value
+   against the axis before returning the page.
+4. A 2-3 paragraph narrative inside <section class="narrative"> that connects
+   the evidence. End every factual sentence with one or more citation links;
+   clearly label interpretation as analysis rather than fact.
+5. Superscript citations for every stat and plotted value, formatted exactly
+   as <sup><a class="citation" href="#source-N">[N]</a></sup>, where N is a
+   numeric web_search result ID from this run.
+6. Put this exact placeholder where the complete sources section belongs:
+   {SOURCE_PLACEHOLDER}
+
+Do not write external URLs yourself. The CLI replaces the placeholder with
+titles, dates, and canonical URLs taken directly from the API search_results.
+Do not use fetch, XMLHttpRequest, WebSocket, EventSource, sendBeacon, dynamic
+imports, iframes, forms, remote images, external CSS, or external scripts.
+Do not use SVG SMIL elements such as <animate>, <animateMotion>, or
+<animateTransform>; animate only with CSS so reduced-motion preferences work.
+
+Use the source's exact terminology and scope. Do not turn "versions" into
+"fine-tunes," infer distribution-channel coverage, or add unsupported rhetoric.
+When two series are not directly comparable, say so without declaring a winner.
+
+Design: dark background, high-contrast accent palette, modern sans-serif
+system font stack, generous whitespace, subtle CSS animations, responsive
+layout, keyboard-visible focus states, and a
+@media (prefers-reduced-motion: reduce) rule that disables both animation and
+transition. Scope responsive chart sizing to figure svg; never apply width:100%
+to every svg because small interface icons must retain their explicit size.
+Keep SVG text legible at a 390px-wide viewport.
+
+Output format - IMPORTANT:
+First, a 2-3 sentence summary of what the data says. Do not expose research
+notes, working, or a fact list. Then output exactly one HTML document starting
+with <!DOCTYPE html> and ending with </html>. Do not use Markdown fences and do
+not put any text after </html>.
+"""
+
+
+class RunError(RuntimeError):
+    """Base class for recoverable or terminal run failures."""
+
+
+class SubmissionUnknownError(RunError):
+    """The create connection failed before a response ID was received."""
+
+
+class PendingRunError(RunError):
+    """Local waiting ended while the durable server-side run may continue."""
+
+    def __init__(self, response_id: str):
+        self.response_id = response_id
+        super().__init__(
+            f"Run {response_id} did not reach a known terminal state locally. "
+            "Resume without creating a new run: "
+            f"python data_story.py --resume {response_id}"
+        )
+
+
+class TerminalRunError(RunError):
+    """The Agent API reported a non-success terminal status."""
+
+
+class StoryValidationError(RunError):
+    """The completed response did not satisfy the artifact contract."""
+
+
+def get_value(value: Any, name: str, default: Any = None) -> Any:
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def plain_value(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(key): plain_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [plain_value(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return str(value)
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+        ) as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def write_receipt(path: Path, receipt: dict[str, Any]) -> None:
+    receipt["updated_at"] = utc_now()
+    api_key = os.environ.get("PERPLEXITY_API_KEY")
+
+    def redacted(value: Any) -> Any:
+        if isinstance(value, str):
+            return value.replace(api_key, "[REDACTED]") if api_key else value
+        if isinstance(value, dict):
+            return {key: redacted(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [redacted(item) for item in value]
+        return value
+
+    atomic_write_text(path, json.dumps(redacted(receipt), indent=2, ensure_ascii=False) + "\n")
+
+
+def begin_client_attempt(receipt: dict[str, Any], mode: str) -> dict[str, Any]:
+    """Start a receipt attempt and migrate receipts created by older versions."""
+    if not receipt.get("attempts") and (
+        "client_elapsed_seconds" in receipt or "client_error" in receipt
+    ):
+        legacy: dict[str, Any] = {
+            "mode": "resume" if receipt.get("resume_history") else "submit",
+            "status": receipt.get("status", "unknown"),
+            "finished_at": receipt.get("updated_at"),
+        }
+        if "client_elapsed_seconds" in receipt:
+            legacy["elapsed_seconds"] = receipt["client_elapsed_seconds"]
+        if "client_error" in receipt:
+            legacy["error"] = receipt["client_error"]
+        receipt.setdefault("attempts", []).append(legacy)
+
+    receipt.pop("client_error", None)
+    receipt.pop("client_wait_status", None)
+    attempt = {"mode": mode, "status": "running", "started_at": utc_now()}
+    receipt.setdefault("attempts", []).append(attempt)
+    return attempt
+
+
+def finish_client_attempt(
+    receipt: dict[str, Any],
+    attempt: dict[str, Any],
+    status: str,
+    elapsed_seconds: float,
+    error: BaseException | None = None,
+) -> None:
+    elapsed = round(elapsed_seconds, 3)
+    attempt.update({"status": status, "finished_at": utc_now(), "elapsed_seconds": elapsed})
+    if error is not None:
+        detail = {"type": type(error).__name__, "message": str(error)}
+        attempt["error"] = detail
+        receipt["client_error"] = detail
+    else:
+        receipt.pop("client_error", None)
+        receipt.pop("client_wait_status", None)
+    elapsed_attempts = [
+        float(item["elapsed_seconds"])
+        for item in receipt.get("attempts", [])
+        if isinstance(item, dict) and isinstance(item.get("elapsed_seconds"), (int, float))
+    ]
+    receipt["attempt_count"] = len(receipt.get("attempts", []))
+    receipt["last_client_attempt_elapsed_seconds"] = elapsed
+    receipt["client_elapsed_seconds"] = round(sum(elapsed_attempts), 3)
+
+
+def resolve_config(
+    profile: str,
+    effort: str | None = None,
+    max_output_tokens: int | None = None,
+    max_steps: int | None = None,
+) -> dict[str, Any]:
+    config = dict(PROFILES[profile])
+    if effort is not None:
+        config["effort"] = effort
+    if max_output_tokens is not None:
+        config["max_output_tokens"] = max_output_tokens
+    if max_steps is not None:
+        config["max_steps"] = max_steps
+    if config["max_output_tokens"] < 1:
+        raise ValueError("max_output_tokens must be at least 1")
+    if not 1 <= config["max_steps"] <= 100:
+        raise ValueError("max_steps must be between 1 and 100")
+    return config
+
+
+def build_request(
+    topic: str,
+    effort: str,
+    max_output_tokens: int,
+    max_steps: int,
+) -> dict[str, Any]:
+    request: dict[str, Any] = {
+        "model": MODEL,
+        "background": True,
+        "store": True,
+        "max_output_tokens": max_output_tokens,
+        "max_steps": max_steps,
+        "instructions": STORY_SYSTEM,
+        "input": STORY_TASK.format(topic=topic),
+        "tools": [{"type": "web_search"}],
+    }
+    if effort == "max":
+        # perplexityai 0.43.1 omits documented "max" from its generated enum.
+        request["extra_body"] = {"reasoning": {"effort": "max"}}
+    else:
+        request["reasoning"] = {"effort": effort}
+    return request
+
+
+def wire_request_preview(request: dict[str, Any]) -> dict[str, Any]:
+    preview = {key: value for key, value in request.items() if key != "extra_body"}
+    preview.update(request.get("extra_body", {}))
+    return preview
+
+
+def response_error(response: Any) -> Any:
+    return plain_value(get_value(response, "error"))
+
+
+def checkpoint_response(
+    response: Any,
+    receipt: dict[str, Any],
+    receipt_path: Path,
+    sequence_number: int | None = None,
+) -> None:
+    response_id = get_value(response, "id")
+    if response_id:
+        receipt["response_id"] = response_id
+    provider_status = get_value(response, "status")
+    if provider_status is not None:
+        receipt["provider_status"] = provider_status
+    receipt["model"] = get_value(response, "model", receipt.get("model"))
+    created_at = get_value(response, "created_at")
+    if created_at is not None:
+        receipt["provider_created_at"] = created_at
+    if sequence_number is not None:
+        receipt["last_sequence_number"] = sequence_number
+    error = response_error(response)
+    if error:
+        receipt["error"] = error
+    usage = get_value(response, "usage")
+    if usage is not None:
+        receipt["usage"] = plain_value(usage)
+    write_receipt(receipt_path, receipt)
+
+
+def source_records_from_item(item: Any) -> tuple[list[str], list[dict[str, Any]]]:
+    if get_value(item, "type") != "search_results":
+        return [], []
+    queries = [str(query) for query in get_value(item, "queries", []) or []]
+    sources = []
+    for result in get_value(item, "results", []) or []:
+        sources.append(
+            {
+                "id": str(get_value(result, "id", "")),
+                "title": str(get_value(result, "title", "") or ""),
+                "url": str(get_value(result, "url", "") or ""),
+                "date": get_value(result, "date"),
+                "last_updated": get_value(result, "last_updated"),
+                "snippet": str(get_value(result, "snippet", "") or ""),
+            }
+        )
+    return queries, sources
+
+
+def response_research(response: Any) -> tuple[list[str], list[dict[str, Any]]]:
+    queries: list[str] = []
+    sources: list[dict[str, Any]] = []
+    for item in get_value(response, "output", []) or []:
+        item_queries, item_sources = source_records_from_item(item)
+        queries.extend(item_queries)
+        sources.extend(item_sources)
+    return list(dict.fromkeys(queries)), sources
+
+
+def record_research(
+    receipt: dict[str, Any],
+    receipt_path: Path,
+    queries: Iterable[str],
+    sources: Iterable[dict[str, Any]],
+) -> None:
+    receipt["queries"] = list(dict.fromkeys([*receipt.get("queries", []), *queries]))
+    existing = {str(item.get("id")): item for item in receipt.get("sources", [])}
+    for source in sources:
+        existing[str(source.get("id"))] = source
+    receipt["sources"] = list(existing.values())
+    write_receipt(receipt_path, receipt)
+
+
+def poll_response(
+    client: Perplexity,
+    response_id: str,
+    receipt: dict[str, Any],
+    receipt_path: Path,
+    wait_timeout: float,
+    poll_interval: float = POLL_INTERVAL_SECONDS,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+    started_at: float | None = None,
+) -> Any:
+    started = monotonic() if started_at is None else started_at
+    deadline = started + wait_timeout
+    poll_client = client.with_options(max_retries=0)
+    last_status: str | None = None
+    last_heartbeat = started
+    retry_attempt = 0
+    receipt["status"] = "waiting"
+    write_receipt(receipt_path, receipt)
+    while True:
+        before_request = monotonic()
+        if before_request >= deadline:
+            receipt["client_wait_status"] = "timed_out"
+            write_receipt(receipt_path, receipt)
+            raise PendingRunError(response_id)
+        remaining = deadline - before_request
+        try:
+            response = poll_client.responses.retrieve(
+                response_id,
+                timeout=min(remaining, 30.0),
+            )
+            retry_attempt = 0
+        except (
+            APIConnectionError, InternalServerError, RateLimitError, httpx.HTTPError
+        ) as error:
+            retry_attempt += 1
+            now = monotonic()
+            if retry_attempt >= POLL_RETRY_ATTEMPTS:
+                receipt["client_wait_status"] = "retrieval_failed"
+                write_receipt(receipt_path, receipt)
+                raise PendingRunError(response_id) from error
+            delay = min(2 ** (retry_attempt - 1), 8, max(0.0, deadline - now))
+            if delay <= 0:
+                receipt["client_wait_status"] = "timed_out"
+                write_receipt(receipt_path, receipt)
+                raise PendingRunError(response_id)
+            print(f"\n  retrieval interrupted; retrying in {delay:g}s", file=sys.stderr)
+            sleep(delay)
+            continue
+
+        status = str(get_value(response, "status", "unknown"))
+        checkpoint_response(response, receipt, receipt_path)
+        queries, sources = response_research(response)
+        if queries or sources:
+            known_queries = set(receipt.get("queries", []))
+            record_research(receipt, receipt_path, queries, sources)
+            for query in queries:
+                if query not in known_queries:
+                    print(f"\r  searched: {query}" + " " * 20, file=sys.stderr)
+
+        now = monotonic()
+        if status != last_status or now - last_heartbeat >= 15:
+            print(
+                f"\r  {status} · {now - started:,.0f}s elapsed" + " " * 20,
+                end="",
+                file=sys.stderr,
+                flush=True,
+            )
+            last_status = status
+            last_heartbeat = now
+
+        if status == "completed":
+            print(file=sys.stderr)
+            return response
+        if status not in PENDING_STATUSES:
+            print(file=sys.stderr)
+            detail = response_error(response) or "No provider error detail was returned."
+            raise TerminalRunError(f"Run {response_id} ended with status {status}: {detail}")
+        if now >= deadline:
+            receipt["client_wait_status"] = "timed_out"
+            write_receipt(receipt_path, receipt)
+            print(file=sys.stderr)
+            raise PendingRunError(response_id)
+        sleep(min(poll_interval, deadline - now))
+
+
+def run_background(
+    client: Perplexity,
+    create_kwargs: dict[str, Any],
+    receipt: dict[str, Any],
+    receipt_path: Path,
+    wait_timeout: float,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> Any:
+    started = monotonic()
+    create_client = client.with_options(max_retries=0)
+    try:
+        response = create_client.responses.create(
+            timeout=wait_timeout,
+            **create_kwargs,
+        )
+    except APIStatusError as error:
+        if 400 <= error.status_code < 500:
+            raise
+        receipt["submission_error"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+        receipt["status"] = "submission_unknown"
+        write_receipt(receipt_path, receipt)
+        raise SubmissionUnknownError(
+            "The server returned an error after the create request was sent. The "
+            "submission outcome is unknown, so the CLI will not retry automatically."
+        ) from error
+    except (APIError, httpx.HTTPError) as error:
+        receipt["submission_error"] = {
+            "type": type(error).__name__,
+            "message": str(error),
+        }
+        receipt["status"] = "submission_unknown"
+        write_receipt(receipt_path, receipt)
+        raise SubmissionUnknownError(
+            "The create connection failed before a response ID arrived. The submission "
+            "outcome is unknown, so the CLI will not retry automatically."
+        ) from error
+
+    response_id = get_value(response, "id")
+    if not response_id:
+        receipt["status"] = "submission_unknown"
+        write_receipt(receipt_path, receipt)
+        raise SubmissionUnknownError("The create response did not contain a response ID.")
+
+    checkpoint_response(response, receipt, receipt_path)
+    queries, sources = response_research(response)
+    if queries or sources:
+        record_research(receipt, receipt_path, queries, sources)
+    status = str(get_value(response, "status", "unknown"))
+    if status == "completed":
+        return response
+    if status not in PENDING_STATUSES:
+        detail = response_error(response) or "No provider error detail was returned."
+        raise TerminalRunError(f"Run {response_id} ended with status {status}: {detail}")
+    return poll_response(
+        client,
+        str(response_id),
+        receipt,
+        receipt_path,
+        wait_timeout,
+        sleep=sleep,
+        monotonic=monotonic,
+        started_at=started,
+    )
+
+
+def final_text(response: Any) -> str:
+    return "".join(
+        str(get_value(block, "text", ""))
+        for item in get_value(response, "output", []) or []
+        if get_value(item, "type") == "message"
+        for block in get_value(item, "content", []) or []
+        if get_value(block, "type") == "output_text"
+    )
+
+
+def extract_html(text: str) -> tuple[str, str]:
+    if len(re.findall(r"<!doctype\s+html\b", text, re.IGNORECASE)) != 1:
+        raise StoryValidationError("Expected exactly one <!DOCTYPE html> document.")
+    start = re.search(r"<!doctype\s+html\b[^>]*>", text, re.IGNORECASE)
+    end_matches = list(re.finditer(r"</html\s*>", text, re.IGNORECASE))
+    if start is None or len(end_matches) != 1:
+        raise StoryValidationError("The response must contain one complete HTML document.")
+    end = end_matches[0]
+    if text[end.end() :].strip():
+        raise StoryValidationError("Unexpected text appeared after </html>.")
+    summary = text[: start.start()].strip()
+    # Some agentic models expose research notes before a final `---` separator.
+    # Keep only the intended summary while preserving the strict HTML boundary.
+    if re.search(r"(?m)^---\s*$", summary):
+        summary = re.split(r"(?m)^---\s*$", summary)[-1].strip()
+    return summary, text[start.start() : end.end()]
+
+
+def has_external_css_url(text: str) -> bool:
+    for match in re.finditer(r"url\s*\(\s*([^)]*?)\s*\)", text, re.IGNORECASE):
+        target = match.group(1).strip().strip("'\"").strip()
+        if target and not target.lower().startswith("data:") and not target.startswith("#"):
+            return True
+    return False
+
+
+def numeric_attribute(values: dict[str, str], name: str, default: float | None = None) -> float | None:
+    raw = values.get(name)
+    if raw is None or not raw.strip():
+        return default
+    if not re.fullmatch(
+        r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?",
+        raw.strip(),
+    ):
+        return None
+    return float(raw)
+
+
+def svg_viewbox(value: str) -> tuple[float, float, float, float] | None:
+    parts = [part for part in re.split(r"[\s,]+", value.strip()) if part]
+    if len(parts) != 4:
+        return None
+    try:
+        x, y, width, height = (float(part) for part in parts)
+    except ValueError:
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return x, y, width, height
+
+
+def primitive_bounds(
+    tag: str, values: dict[str, str]
+) -> tuple[float, float, float, float] | None:
+    """Return untransformed bounds for simple SVG mark primitives."""
+    if tag == "circle":
+        cx = numeric_attribute(values, "cx", 0.0)
+        cy = numeric_attribute(values, "cy", 0.0)
+        radius = numeric_attribute(values, "r")
+        if None in {cx, cy, radius} or radius < 0:  # type: ignore[operator]
+            return None
+        return cx - radius, cy - radius, cx + radius, cy + radius  # type: ignore[operator]
+    if tag == "ellipse":
+        cx = numeric_attribute(values, "cx", 0.0)
+        cy = numeric_attribute(values, "cy", 0.0)
+        rx = numeric_attribute(values, "rx")
+        ry = numeric_attribute(values, "ry")
+        if None in {cx, cy, rx, ry} or rx < 0 or ry < 0:  # type: ignore[operator]
+            return None
+        return cx - rx, cy - ry, cx + rx, cy + ry  # type: ignore[operator]
+    if tag == "rect":
+        x = numeric_attribute(values, "x", 0.0)
+        y = numeric_attribute(values, "y", 0.0)
+        width = numeric_attribute(values, "width")
+        height = numeric_attribute(values, "height")
+        if None in {x, y, width, height} or width < 0 or height < 0:  # type: ignore[operator]
+            return None
+        return x, y, x + width, y + height  # type: ignore[operator]
+    if tag == "line":
+        x1 = numeric_attribute(values, "x1", 0.0)
+        y1 = numeric_attribute(values, "y1", 0.0)
+        x2 = numeric_attribute(values, "x2", 0.0)
+        y2 = numeric_attribute(values, "y2", 0.0)
+        if None in {x1, y1, x2, y2}:
+            return None
+        return min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)  # type: ignore[type-var]
+    return None
+
+
+class StoryInspector(HTMLParser):
+    VOID_ELEMENTS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+        "meta", "param", "source", "track", "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.placeholder_count = 0
+        self.stat_cards: list[dict[str, Any]] = []
+        self.figures: list[dict[str, Any]] = []
+        self.svgs: list[dict[str, Any]] = []
+        self.marks: list[dict[str, Any]] = []
+        self.citation_ids: list[str] = []
+        self.external_links: list[str] = []
+        self.unsafe: list[str] = []
+        self.structure_errors: list[str] = []
+        self.script_depth = 0
+        self.style_depth = 0
+        self.script_text: list[str] = []
+        self.style_text: list[str] = []
+        self.narrative_paragraph_citations: list[int] = []
+        self.stack: list[dict[str, Any]] = []
+
+    def handle_comment(self, data: str) -> None:
+        if data.strip() == "PERPLEXITY_SOURCES":
+            self.placeholder_count += 1
+
+    def handle_startendtag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag.lower() not in self.VOID_ELEMENTS:
+            self.handle_endtag(tag)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        values = {name.lower(): value or "" for name, value in attrs}
+        classes = set(values.get("class", "").split())
+
+        parent = self.stack[-1] if self.stack else {}
+        stat_index = parent.get("stat_index")
+        figure_index = parent.get("figure_index")
+        svg_index = parent.get("svg_index")
+        mark_index = parent.get("mark_index")
+        narrative = bool(parent.get("narrative")) or (
+            tag == "section" and "narrative" in classes
+        )
+        paragraph_index = parent.get("paragraph_index")
+
+        if "stat-card" in classes:
+            stat_index = len(self.stat_cards)
+            self.stat_cards.append({
+                "source_id": values.get("data-source-id") or None,
+                "citation_ids": [],
+            })
+        if tag == "figure":
+            figure_index = len(self.figures)
+            self.figures.append({"citation_ids": [], "svg_indices": []})
+        if tag == "svg":
+            svg_index = len(self.svgs)
+            self.svgs.append({
+                "figure_index": figure_index,
+                "viewbox": svg_viewbox(values.get("viewbox", "")),
+                "mark_indices": [],
+                "gridlines": 0,
+                "axis_labels": 0,
+                "accessible_titles": 0,
+                "accessible": values.get("role") == "img" and bool(
+                    values.get("aria-label") or values.get("aria-labelledby")
+                ),
+            })
+            if figure_index is not None:
+                self.figures[figure_index]["svg_indices"].append(svg_index)
+        if "data-mark" in classes:
+            mark_index = len(self.marks)
+            self.marks.append({
+                "source_id": values.get("data-source-id") or None,
+                "svg_index": svg_index,
+                "has_title": False,
+                "focusable": values.get("tabindex") == "0",
+                "bounds": [],
+                "invalid_geometry": False,
+                "transformed": bool(values.get("transform")),
+            })
+            if svg_index is not None:
+                self.svgs[svg_index]["mark_indices"].append(mark_index)
+        if mark_index is not None and tag in {"circle", "ellipse", "rect", "line"}:
+            bounds = primitive_bounds(tag, values)
+            if bounds is None:
+                self.marks[mark_index]["invalid_geometry"] = True
+            else:
+                self.marks[mark_index]["bounds"].append(bounds)
+            if values.get("transform"):
+                self.marks[mark_index]["transformed"] = True
+        if svg_index is not None:
+            if "gridline" in classes:
+                self.svgs[svg_index]["gridlines"] += 1
+            if "axis-label" in classes:
+                self.svgs[svg_index]["axis_labels"] += 1
+            if tag == "title":
+                if mark_index is not None:
+                    self.marks[mark_index]["has_title"] = True
+                else:
+                    self.svgs[svg_index]["accessible_titles"] += 1
+        if tag == "p" and narrative:
+            self.narrative_paragraph_citations.append(0)
+            paragraph_index = len(self.narrative_paragraph_citations) - 1
+
+        if tag == "a":
+            href = values.get("href", "")
+            if href and not href.startswith("#"):
+                self.external_links.append(href)
+            if "citation" in classes:
+                match = re.fullmatch(r"#source-(\d+)", href)
+                if match:
+                    source_id = match.group(1)
+                    self.citation_ids.append(source_id)
+                    if stat_index is not None:
+                        self.stat_cards[stat_index]["citation_ids"].append(source_id)
+                    if figure_index is not None:
+                        self.figures[figure_index]["citation_ids"].append(source_id)
+                    if paragraph_index is not None:
+                        self.narrative_paragraph_citations[paragraph_index] += 1
+                else:
+                    self.unsafe.append("A citation has an invalid source fragment.")
+        if tag == "script":
+            self.script_depth += 1
+            if values.get("src"):
+                self.unsafe.append("External script src is not allowed.")
+        if tag == "style":
+            self.style_depth += 1
+        if tag == "link":
+            self.unsafe.append("External link elements are not allowed.")
+        if tag in {"iframe", "object", "embed", "base"}:
+            self.unsafe.append(f"<{tag}> is not allowed.")
+        if tag in {"animate", "animatemotion", "animatetransform", "set"}:
+            self.unsafe.append("SVG SMIL animation is not allowed; use reduced-motion-safe CSS.")
+        if tag == "form":
+            self.unsafe.append("Forms are not allowed.")
+        if tag in {"img", "audio", "video", "source", "track"}:
+            source = values.get("src", "")
+            if source and not source.lower().startswith("data:"):
+                self.unsafe.append(f"External <{tag}> assets are not allowed.")
+            if values.get("srcset"):
+                self.unsafe.append("srcset assets are not allowed.")
+        if tag == "meta" and values.get("http-equiv", "").lower() == "refresh":
+            self.unsafe.append("Meta refresh is not allowed.")
+        for name in ("src", "srcset", "action", "formaction"):
+            if re.search(r"(?:https?:)?//", values.get(name, ""), re.IGNORECASE):
+                self.unsafe.append(f"Remote {name} is not allowed.")
+        for name, value in values.items():
+            if name.startswith("on"):
+                self.unsafe.append("Inline event-handler attributes are not allowed.")
+            if has_external_css_url(value):
+                self.unsafe.append("External CSS URLs are not allowed.")
+
+        if tag not in self.VOID_ELEMENTS:
+            self.stack.append({
+                "tag": tag,
+                "stat_index": stat_index,
+                "figure_index": figure_index,
+                "svg_index": svg_index,
+                "mark_index": mark_index,
+                "narrative": narrative,
+                "paragraph_index": paragraph_index,
+            })
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        if tag == "script" and self.script_depth:
+            self.script_depth -= 1
+        if tag == "style" and self.style_depth:
+            self.style_depth -= 1
+        matching = next(
+            (index for index in range(len(self.stack) - 1, -1, -1)
+             if self.stack[index]["tag"] == tag),
+            None,
+        )
+        if matching is None:
+            self.structure_errors.append(f"Unexpected closing </{tag}> tag.")
+        else:
+            if matching != len(self.stack) - 1:
+                self.structure_errors.append(f"Mismatched nesting before </{tag}>.")
+            del self.stack[matching:]
+
+    def handle_data(self, data: str) -> None:
+        if self.script_depth:
+            self.script_text.append(data)
+        if self.style_depth:
+            self.style_text.append(data)
+
+
+def authoritative_sources(sources: Iterable[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    authoritative: dict[str, dict[str, Any]] = {}
+    for source in sources:
+        source_id = str(source.get("id", ""))
+        if not re.fullmatch(r"\d+", source_id):
+            raise StoryValidationError(f"Search result has an invalid numeric ID: {source_id!r}")
+        url = str(source.get("url", ""))
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise StoryValidationError(f"Search result {source_id} has an invalid URL.")
+        if source_id in authoritative and authoritative[source_id]["url"] != url:
+            raise StoryValidationError(f"Search result ID {source_id} maps to conflicting URLs.")
+        authoritative[source_id] = source
+    if not authoritative:
+        raise StoryValidationError("The completed response contained no usable search results.")
+    return authoritative
+
+
+def source_section(source_ids: Iterable[str], sources: dict[str, dict[str, Any]]) -> str:
+    rows = []
+    for source_id in source_ids:
+        source = sources[source_id]
+        title = escape(str(source.get("title") or source["url"]))
+        url = escape(str(source["url"]), quote=True)
+        date = source.get("date") or source.get("last_updated")
+        date_text = f" <span class=\"source-date\">({escape(str(date))})</span>" if date else ""
+        rows.append(
+            f'    <li id="source-{source_id}"><a href="{url}" target="_blank" '
+            f'rel="noopener noreferrer">{title}</a>{date_text}</li>'
+        )
+    return (
+        '<section id="sources" class="sources" aria-labelledby="sources-heading">\n'
+        '  <h2 id="sources-heading">Sources</h2>\n'
+        "  <ol>\n"
+        + "\n".join(rows)
+        + "\n  </ol>\n</section>"
+    )
+
+
+def insert_csp(document: str) -> str:
+    csp_pattern = re.compile(
+        r'<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["\']?Content-Security-Policy["\']?)[^>]*>',
+        re.IGNORECASE,
+    )
+    document = csp_pattern.sub("", document)
+    head = re.search(r"<head\b[^>]*>", document, re.IGNORECASE)
+    if head is None:
+        raise StoryValidationError("The HTML document is missing <head>.")
+    return document[: head.end()] + "\n  " + CSP_META + document[head.end() :]
+
+
+def finalize_html(raw_html: str, search_sources: Iterable[dict[str, Any]]) -> str:
+    if raw_html.count(SOURCE_PLACEHOLDER) != 1:
+        raise StoryValidationError("Expected exactly one PERPLEXITY_SOURCES placeholder.")
+    inspector = StoryInspector()
+    inspector.feed(raw_html)
+    inspector.close()
+    if inspector.placeholder_count != 1:
+        raise StoryValidationError("The source placeholder must be an HTML comment.")
+    if inspector.structure_errors or inspector.stack:
+        raise StoryValidationError("The HTML contains unbalanced or mismatched tags.")
+    if not 3 <= len(inspector.stat_cards) <= 4:
+        raise StoryValidationError("Expected exactly 3-4 .stat-card elements.")
+    chart_svgs = [svg for svg in inspector.svgs if svg["mark_indices"]]
+    if len(chart_svgs) < 2:
+        raise StoryValidationError("Expected at least two SVG charts.")
+    if not 2 <= len(inspector.narrative_paragraph_citations) <= 3:
+        raise StoryValidationError("Expected 2-3 paragraphs inside .narrative.")
+    if any(count == 0 for count in inspector.narrative_paragraph_citations):
+        raise StoryValidationError("Every narrative paragraph needs at least one citation.")
+    if inspector.external_links:
+        raise StoryValidationError("The model wrote external URLs instead of source IDs.")
+
+    script = "\n".join(inspector.script_text)
+    style = "\n".join(inspector.style_text)
+    if re.search(
+        r"\b(?:fetch|XMLHttpRequest|WebSocket|EventSource|sendBeacon|import)\s*\(",
+        script,
+        re.IGNORECASE,
+    ):
+        inspector.unsafe.append("Network-capable JavaScript is not allowed.")
+    if re.search(r"@import", style, re.IGNORECASE) or has_external_css_url(style):
+        inspector.unsafe.append("Remote CSS is not allowed.")
+    if re.search(
+        r"(?:^|})\s*svg\s*(?:,[^{]*)?\{[^}]*\bwidth\s*:\s*100\s*%",
+        style,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        inspector.unsafe.append("Scope width:100% to chart SVGs instead of every SVG.")
+    if not re.search(r"prefers-reduced-motion\s*:\s*reduce", style, re.IGNORECASE):
+        inspector.unsafe.append("A prefers-reduced-motion: reduce rule is required.")
+    if not re.search(r"animation\s*:\s*none\b", style, re.IGNORECASE):
+        inspector.unsafe.append("Reduced-motion CSS must disable animation.")
+    if not re.search(r"transition\s*:\s*none\b", style, re.IGNORECASE):
+        inspector.unsafe.append("Reduced-motion CSS must disable transitions.")
+    if inspector.unsafe:
+        raise StoryValidationError(" ".join(dict.fromkeys(inspector.unsafe)))
+
+    linked_ids: list[str | None] = []
+    for card in inspector.stat_cards:
+        source_id = card["source_id"]
+        linked_ids.append(source_id)
+        if set(card["citation_ids"]) != {source_id}:
+            raise StoryValidationError(
+                "Every stat card must contain a citation to its own data-source-id."
+            )
+
+    if any(mark["svg_index"] is None for mark in inspector.marks):
+        raise StoryValidationError("Every .data-mark must be inside an SVG chart.")
+
+    for svg in chart_svgs:
+        if svg["figure_index"] is None:
+            raise StoryValidationError("Every SVG chart must be inside a <figure>.")
+        if svg["viewbox"] is None:
+            raise StoryValidationError("Every SVG chart needs a valid numeric viewBox.")
+        if not svg["accessible"] or svg["accessible_titles"] < 1:
+            raise StoryValidationError("Every SVG chart needs role=img and an accessible title.")
+        if svg["gridlines"] < 1:
+            raise StoryValidationError("Every SVG chart needs at least one .gridline.")
+        if svg["axis_labels"] < 2:
+            raise StoryValidationError("Every SVG chart needs at least two .axis-label elements.")
+        chart_ids = set()
+        for mark_index in svg["mark_indices"]:
+            mark = inspector.marks[mark_index]
+            linked_ids.append(mark["source_id"])
+            chart_ids.add(mark["source_id"])
+            if not mark["has_title"]:
+                raise StoryValidationError("Every chart data mark needs a nested <title> tooltip.")
+            if not mark["focusable"]:
+                raise StoryValidationError("Every chart data mark needs tabindex=0 for keyboard access.")
+            if mark["transformed"] or mark["invalid_geometry"] or not mark["bounds"]:
+                raise StoryValidationError(
+                    "Every chart data mark needs untransformed numeric circle, ellipse, rect, or line geometry."
+                )
+            view_x, view_y, view_width, view_height = svg["viewbox"]
+            epsilon = 1e-6
+            for left, top, right, bottom in mark["bounds"]:
+                if (
+                    left < view_x - epsilon
+                    or top < view_y - epsilon
+                    or right > view_x + view_width + epsilon
+                    or bottom > view_y + view_height + epsilon
+                ):
+                    raise StoryValidationError(
+                        "A chart data mark falls outside its SVG viewBox; rescale the axis and geometry."
+                    )
+        figure = inspector.figures[svg["figure_index"]]
+        if not chart_ids.issubset(set(figure["citation_ids"])):
+            raise StoryValidationError(
+                "Each figure must cite every source ID used by its chart marks."
+            )
+
+    if any(source_id is None or not re.fullmatch(r"\d+", source_id) for source_id in linked_ids):
+        raise StoryValidationError("Every stat card and data mark needs a numeric data-source-id.")
+    citation_ids = inspector.citation_ids
+    if len(set(citation_ids)) < MIN_CITED_SOURCES:
+        raise StoryValidationError(f"Expected citations to at least {MIN_CITED_SOURCES} sources.")
+
+    sources = authoritative_sources(search_sources)
+    used_ids = list(dict.fromkeys(citation_ids))
+    missing = sorted(set(used_ids) - set(sources))
+    if missing:
+        raise StoryValidationError(f"Citations reference unknown search result IDs: {missing}")
+
+    finalized = raw_html.replace(SOURCE_PLACEHOLDER, source_section(used_ids, sources))
+    return insert_csp(finalized)
+
+
+def run_cost(response: Any) -> float | None:
+    cost = get_value(get_value(response, "usage"), "cost")
+    total = get_value(cost, "total_cost")
+    return float(total) if total is not None else None
+
+
+def format_cost(cost: float | None) -> str:
+    return "unavailable" if cost is None else f"${cost:.4f}"
+
+
+def count_sources(document: str) -> int:
+    return len(
+        set(
+            re.findall(
+                r'''<a\b[^>]*\bhref\s*=\s*["'](https?://[^"']+)["']''',
+                document,
+                re.IGNORECASE,
+            )
+        )
+    )
+
+
+def resume_command(response_id: str, output_path: Path, receipt_path: Path) -> str:
+    return (
+        f"python data_story.py --resume {shlex.quote(response_id)} "
+        f"--output {shlex.quote(str(output_path))} "
+        f"--receipt {shlex.quote(str(receipt_path))}"
+    )
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build a grounded interactive data story with Kimi K3.")
+    parser.add_argument("topic", nargs="?", help="What the data story should cover")
+    parser.add_argument("--resume", metavar="RESPONSE_ID", help="Resume a durable background run")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default="quick")
+    parser.add_argument("--effort", choices=EFFORT_LEVELS, help="Override the profile effort")
+    parser.add_argument("--max-output-tokens", type=int, help="Override the output-token ceiling")
+    parser.add_argument("--max-steps", type=int, help="Override research-loop steps (1-100)")
+    parser.add_argument("--wait-timeout", type=float, default=DEFAULT_WAIT_TIMEOUT_SECONDS,
+                        help="Seconds to wait locally before exiting resumably (default: 3600)")
+    parser.add_argument("--output", help="Output HTML path")
+    parser.add_argument("--receipt", help="Run receipt JSON path")
+    parser.add_argument("--dry-run", action="store_true", help="Print the request without calling the API")
+    args = parser.parse_args(argv)
+    if bool(args.topic) == bool(args.resume):
+        parser.error("provide exactly one of topic or --resume RESPONSE_ID")
+    if args.resume and not re.fullmatch(r"resp_[A-Za-z0-9_-]+", args.resume):
+        parser.error("--resume must be a valid resp_... ID")
+    if args.resume and args.dry_run:
+        parser.error("--dry-run cannot be combined with --resume")
+    if args.wait_timeout <= 0:
+        parser.error("--wait-timeout must be greater than zero")
+    try:
+        args.config = resolve_config(
+            args.profile, args.effort, args.max_output_tokens, args.max_steps
+        )
+    except ValueError as error:
+        parser.error(str(error))
+    return args
+
+
+def main(
+    argv: list[str] | None = None,
+    client_factory: Callable[..., Perplexity] = Perplexity,
+) -> int:
+    args = parse_args(argv)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+    output_path = Path(args.output or f"data-story-{timestamp}.html")
+    receipt_path = Path(args.receipt or f"{output_path}.receipt.json")
+    if output_path.resolve() == receipt_path.resolve():
+        print("--output and --receipt must be different files.", file=sys.stderr)
+        return 2
+
+    request = None
+    if args.topic:
+        request = build_request(args.topic, **args.config)
+        if args.dry_run:
+            print(json.dumps(wire_request_preview(request), indent=2))
+            return 0
+
+    if not os.environ.get("PERPLEXITY_API_KEY"):
+        print("Set PERPLEXITY_API_KEY in your environment.", file=sys.stderr)
+        return 2
+
+    receipt: dict[str, Any]
+    if args.resume and receipt_path.exists():
+        try:
+            loaded = json.loads(receipt_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            print(f"Cannot resume with unreadable receipt {receipt_path}: {error}", file=sys.stderr)
+            return 2
+        if not isinstance(loaded, dict):
+            print(f"Cannot resume: {receipt_path} is not a JSON object.", file=sys.stderr)
+            return 2
+        stored_id = loaded.get("response_id")
+        if stored_id and stored_id != args.resume:
+            print(
+                f"Cannot resume {args.resume}: receipt belongs to {stored_id}.",
+                file=sys.stderr,
+            )
+            return 2
+        receipt = loaded
+        receipt["response_id"] = args.resume
+        receipt["output_path"] = str(output_path)
+        receipt.setdefault("queries", [])
+        receipt.setdefault("sources", [])
+    else:
+        receipt = {
+            "created_at": utc_now(),
+            "status": "starting",
+            "topic": args.topic,
+            "profile": args.profile if args.topic else None,
+            "config": args.config if args.topic else None,
+            "output_path": str(output_path),
+            "request": wire_request_preview(request) if request else None,
+            "response_id": args.resume,
+            "queries": [],
+            "sources": [],
+        }
+
+    started = time.monotonic()
+    attempt = begin_client_attempt(receipt, "resume" if args.resume else "submit")
+    if args.resume:
+        receipt["status"] = "resuming"
+        receipt.setdefault("resume_history", []).append(attempt["started_at"])
+    write_receipt(receipt_path, receipt)
+    client = client_factory()
+    try:
+        if args.resume:
+            print(f"\nResuming durable run {args.resume}\n", file=sys.stderr)
+            response = poll_response(
+                client, args.resume, receipt, receipt_path, args.wait_timeout
+            )
+        else:
+            print(
+                f"\nBuilding a data story: {args.topic} "
+                f"({args.profile}, K3 effort: {args.config['effort']})\n",
+                file=sys.stderr,
+            )
+            assert request is not None
+            response = run_background(
+                client, request, receipt, receipt_path, args.wait_timeout
+            )
+
+        if get_value(response, "status") == "completed":
+            receipt.setdefault("provider_completed_at", utc_now())
+            if not args.resume:
+                receipt["background_elapsed_seconds"] = round(time.monotonic() - started, 3)
+        checkpoint_response(response, receipt, receipt_path)
+        actual_model = get_value(response, "model")
+        if actual_model != MODEL:
+            raise StoryValidationError(
+                f"Expected completed model {MODEL}, received {actual_model or 'unknown'}."
+            )
+        queries, sources = response_research(response)
+        record_research(receipt, receipt_path, queries, sources)
+        summary, raw_html = extract_html(final_text(response))
+        finalized_html = finalize_html(raw_html, sources)
+        atomic_write_text(output_path, finalized_html)
+
+        cost = run_cost(response)
+        receipt["artifact"] = {
+            "path": str(output_path),
+            "bytes": len(finalized_html.encode("utf-8")),
+            "linked_sources": count_sources(finalized_html),
+        }
+        receipt["provider_cost"] = cost
+        receipt["provider_cost_display"] = format_cost(cost)
+        receipt["status"] = "completed"
+        finish_client_attempt(
+            receipt, attempt, "completed", time.monotonic() - started
+        )
+        write_receipt(receipt_path, receipt)
+
+        print(f"\n{summary}\n", file=sys.stderr)
+        print(
+            f"Saved: {output_path}  ({len(finalized_html)/1024:.0f} KB, "
+            f"{count_sources(finalized_html)} verified source links)  "
+            f"cost {format_cost(cost)}",
+            file=sys.stderr,
+        )
+        print(f"Receipt: {receipt_path}", file=sys.stderr)
+        return 0
+    except KeyboardInterrupt:
+        receipt["client_wait_status"] = "interrupted"
+        response_id = receipt.get("response_id")
+        receipt["status"] = "interrupted" if response_id else "submission_unknown"
+        finish_client_attempt(
+            receipt, attempt, receipt["status"], time.monotonic() - started,
+            KeyboardInterrupt("Interrupted locally"),
+        )
+        write_receipt(receipt_path, receipt)
+        if response_id:
+            print(
+                f"\nInterrupted locally. Resume without a new paid run:\n"
+                f"  {resume_command(response_id, output_path, receipt_path)}",
+                file=sys.stderr,
+            )
+        else:
+            print("\nInterrupted before a response ID was received; do not blindly retry.", file=sys.stderr)
+        return 130
+    except RunError as error:
+        if isinstance(error, StoryValidationError):
+            receipt["status"] = "validation_failed"
+        elif isinstance(error, TerminalRunError):
+            receipt["status"] = "provider_failed"
+        elif isinstance(error, PendingRunError):
+            receipt["status"] = "waiting"
+        elif not isinstance(error, SubmissionUnknownError):
+            receipt["status"] = "failed"
+        finish_client_attempt(
+            receipt, attempt, receipt["status"], time.monotonic() - started, error
+        )
+        write_receipt(receipt_path, receipt)
+        print(f"Error: {error}", file=sys.stderr)
+        if isinstance(error, PendingRunError):
+            print(
+                "Resume without a new paid run:\n"
+                f"  {resume_command(error.response_id, output_path, receipt_path)}",
+                file=sys.stderr,
+            )
+        return 1
+    except (APIError, httpx.HTTPError) as error:
+        receipt["status"] = "api_error"
+        finish_client_attempt(
+            receipt, attempt, receipt["status"], time.monotonic() - started, error
+        )
+        write_receipt(receipt_path, receipt)
+        print(f"API request failed: {error}", file=sys.stderr)
+        return 1
+    finally:
+        client.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+## Offline Verification
+
+After saving the Full Code block as `data_story.py`, these checks make no
+network request and spend no API credits:
+
+```bash
+python --version
+python -m py_compile data_story.py
+python data_story.py --help
+python data_story.py "The rise of open-weights AI models" --dry-run
+```
+
+The development test suite is not duplicated in this standalone page. Before
+publication, the exact embedded script passed 23 offline unit tests with
+warnings treated as errors under Python 3.12.13, plus a Python 3.10 grammar
+parse. Those tests cover exact `high` and `max` SDK serialization, one-POST
+background execution, timeouts, terminal states, `--resume`, cost handling,
+source injection, CSP insertion, chart bounds, reduced motion, unsafe markup,
+receipt accounting, secret redaction, and README/source synchronization.
 
 ## Limitations
 
-- The output is a source-linked draft, not an autonomous publishing system.
-- Structural citation validation does not prove that every sentence faithfully
-  interprets its source.
-- A chart coordinate can be in bounds while still disagreeing with its axis.
-  Verify every plotted value and label before publication.
-- Browser-test desktop and mobile layouts. A chart can avoid overflow while its
-  text remains too small, and a broad SVG rule can accidentally resize icons.
-- Background completion may take several minutes. Resume the same response
-  instead of submitting a duplicate paid request.
+- The generated page is a draft. Structural citation checks cannot determine
+  whether a sentence misreads, overstates, or omits context from its source.
+- Simple SVG marks are checked against the `viewBox`, but a coordinate can still
+  be internally inconsistent with an axis while remaining in bounds. Verify the
+  plotted scale and every label before publication.
+- Verify SVG label size at mobile widths. A chart can avoid horizontal overflow
+  and still make text too small to read.
+- Search quality depends on current coverage. Sparse or conflicting results may
+  cause validation to fail, in which case no HTML is published.
+- High-effort research and full-page generation can take many minutes. Use the
+  response ID and `--resume`; do not blindly submit duplicates.
+- The output contract is one self-contained HTML page. Multi-page projects need
+  a different artifact workflow.
+- A browser-level visual audit is still recommended before publishing to check
+  layout, tooltips, accessibility, and mobile behavior.
+- Run receipts never contain the API key, but the topic and source snippets may
+  still be sensitive and should be reviewed before sharing.
 
 ## Resources
 
 - [Agent API Quickstart](https://docs.perplexity.ai/docs/agent-api/quickstart)
 - [Background Mode](https://docs.perplexity.ai/docs/agent-api/background-mode)
-- [Agent API Models](https://docs.perplexity.ai/docs/agent-api/models#moonshot-ai)
-- [Python SDK](https://github.com/perplexityai/perplexity-py)
+- [Create a Response](https://docs.perplexity.ai/api-reference/agent-post)
+- [Retrieve a Response](https://docs.perplexity.ai/api-reference/agent-get)
+- [Agent API Prompt Guide](https://docs.perplexity.ai/docs/agent-api/prompt-guide)
+- [Perplexity Python SDK Configuration](https://docs.perplexity.ai/docs/sdk/configuration)
+- [Moonshot AI Models and Reasoning Effort](https://docs.perplexity.ai/docs/agent-api/models#moonshot-ai)
 - [Kimi K3 Model Card](https://huggingface.co/moonshotai/Kimi-K3)
