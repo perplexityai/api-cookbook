@@ -324,18 +324,6 @@ interpret each source.
 - Treat output as a draft. The validator checks structure, provenance wiring,
   and common rendering failures; editorial and numeric review remain required.
 
-## Pricing
-
-Agent API cost varies with the selected model, input and output tokens, tool
-calls, reasoning effort, and search work. `--dry-run` makes no API call. For a
-paid run, submit once, preserve the response ID, and resume the same background
-response if local waiting ends.
-
-The receipt records the provider's raw cost breakdown when available. Review
-the [current pricing page](https://docs.perplexity.ai/docs/getting-started/pricing)
-before running the `showcase` profile; the 65,536-token setting is only an output
-ceiling, not a reservation or cost estimate.
-
 ## Full Code
 
 Save this complete block as `data_story.py`. It is byte-for-byte identical to
