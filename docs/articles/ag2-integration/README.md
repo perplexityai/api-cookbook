@@ -211,6 +211,6 @@ A runnable version of this guide lives in [`ag2_perplexity.py`](./ag2_perplexity
 ## 📚 Resources
 
 - [AG2 repository](https://github.com/ag2ai/ag2)
-- [AG2 common tools documentation](https://docs.ag2.ai/docs/user-guide/tools/common_toolkits)
+- [AG2 `PerplexitySearchToolkit` documentation](https://docs.ag2.ai/docs/user-guide/tools/common_toolkits/#perplexitysearchtoolkit)
 - [Perplexity Search API](https://docs.perplexity.ai/docs/search/quickstart)
 - [Sonar models](https://docs.perplexity.ai/docs/sonar/openai-compatibility)
