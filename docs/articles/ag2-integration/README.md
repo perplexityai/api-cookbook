@@ -195,7 +195,7 @@ the `AsyncPerplexity` SDK constructor:
 ```python
 toolkit = PerplexitySearchToolkit(
     api_key=os.environ["PERPLEXITY_API_KEY"],
-    proxy="http://localhost:8080",
+    proxy="http://proxy.internal:8080",
     verify=True,
     timeout=30.0,
 )
