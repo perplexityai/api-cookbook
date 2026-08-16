@@ -31,6 +31,7 @@ In-depth tutorials for advanced implementations:
 - Migrating from Sonar to the Agent API
 - Memory management patterns
 - OpenAI agents integration
+- **[AG2 integration](docs/articles/ag2-integration/)** - Perplexity search tools for AG2 (AutoGen) agents
 - Multi-modal implementations
 
 ## Quick Start
