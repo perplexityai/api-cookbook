@@ -61,6 +61,8 @@ class PerplexityClient:
         self.api_key = api_key
         self.headers = {
             "Authorization": f"Bearer {api_key}",
+            "User-Agent": "api-cookbook/1.0",
+            "X-Pplx-Integration": "api-cookbook/1.0",
             "Content-Type": "application/json"
         }
     

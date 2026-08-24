@@ -92,6 +92,8 @@ Now answer this question:
         # Make the API request
         headers = {
             "Authorization": f"Bearer {api_key}",
+            "User-Agent": "api-cookbook/1.0",
+            "X-Pplx-Integration": "api-cookbook/1.0",
             "Content-Type": "application/json"
         }
         
@@ -400,6 +402,8 @@ Now answer this question:
           method: 'POST',
           headers: {{
             'Authorization': `Bearer ${{API_KEY}}`,
+            'User-Agent': 'api-cookbook/1.0',
+            'X-Pplx-Integration': 'api-cookbook/1.0',
             'Content-Type': 'application/json'
           }},
           body: JSON.stringify(payload)

@@ -124,7 +124,9 @@ class FactChecker:
         headers = {
             "accept": "application/json",
             "content-type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
+            "Authorization": f"Bearer {self.api_key}",
+            "User-Agent": "api-cookbook/1.0",
+            "X-Pplx-Integration": "api-cookbook/1.0"
         }
 
         data = {

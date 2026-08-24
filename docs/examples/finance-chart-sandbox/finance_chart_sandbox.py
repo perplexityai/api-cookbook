@@ -164,7 +164,8 @@ def _request(
         headers={
             "Authorization": f"Bearer {key}",
             "Content-Type": "application/json",
-            "User-Agent": "api-cookbook-finance-chart-sandbox/3.0",
+            "User-Agent": "api-cookbook/1.0",
+            "X-Pplx-Integration": "api-cookbook/1.0",
         },
         method=method,
     )
@@ -185,7 +186,8 @@ def _download(base_url: str, key: str, url_or_path: str, timeout: int = 120) -> 
         url,
         headers={
             "Authorization": f"Bearer {key}",
-            "User-Agent": "api-cookbook-finance-chart-sandbox/3.0",
+            "User-Agent": "api-cookbook/1.0",
+            "X-Pplx-Integration": "api-cookbook/1.0",
         },
         method="GET",
     )
