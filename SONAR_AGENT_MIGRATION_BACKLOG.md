@@ -1,6 +1,6 @@
 # Sonar to Agent API cookbook backlog
 
-This record preserves the useful ideas from Sonar-dependent cookbook content removed ahead of the [September 27, 2026 public-support deadline](https://github.com/ppl-ai/api-docs/blob/e19829338b975df351831342b5ef5c21ab255c83/snippets/SonarDeprecationNotice.mdx). Rebuild these recipes against the [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart); do not restore the old Chat Completions code.
+This record preserves the useful ideas from Sonar-dependent cookbook content removed ahead of the [September 27, 2026 public-support deadline](https://github.com/ppl-ai/api-docs/blob/e19829338b975df351831342b5ef5c21ab255c83/snippets/SonarDeprecationNotice.mdx). Rebuild these recipes against the [Agent API](https://docs.perplexity.ai/docs/agent-api/quickstart); do not restore the old Chat Completions code. Coordinate sequencing through the [Sonar to Agent migration project](https://www.perplexity.ai/projects/sonar-to-agent-migration-AvXYcgZRTK6NO0y2XS9S2Q).
 
 The source links below are pinned to the last pre-cleanup revisions in [`api-cookbook`](https://github.com/perplexityai/api-cookbook/tree/543c229320acf9204d47a3ff91f13349b57047be) and [`api-docs`](https://github.com/ppl-ai/api-docs/tree/e19829338b975df351831342b5ef5c21ab255c83). The repositories had diverged, so both snapshots are needed to preserve every removed item.
 
