@@ -19,14 +19,12 @@ download the CSV and PNG. This script has **no third-party dependencies** — it
 only speaks raw HTTP.
 
 Why this shape?
-- The ``sandbox`` tool is rejected on the synchronous/streaming path
-  ("streaming failed: ... unknown tool"); it must run with ``background: true``
-  and be polled by id. This script always does that.
-- The sandbox now creates files. Anything written to the workspace comes back
-  as a ``share_file`` output item (``file_id`` + a ``/v1/responses/{id}/files/
-  {file_id}/content`` url); you can also list them via
-  ``GET /v1/responses/{id}/files``. So both the CSV and the chart PNG are
-  downloaded directly.
+- The request uses ``background: true`` and is polled by id so the sandbox run
+  can continue if the client disconnects.
+- The sandbox creates files. Anything written to the workspace comes back as a
+  ``share_file`` output item with a ``file_id``. The script constructs the
+  ``/v1/responses/{id}/files/{file_id}/content`` download path; it can also
+  discover files via ``GET /v1/responses/{id}/files``.
 - **Latency: pin the data source.** The slow part of an unconstrained sandbox
   run is the model *discovering* a working price source (public pages 429 or
   gate behind captchas). Telling it to hit Yahoo's v8 chart JSON endpoint
@@ -283,20 +281,27 @@ def run_sandbox_request(
 def shared_files(response: dict, base_url: str, key: str) -> List[Dict[str, str]]:
     """List files the sandbox shared, as ``[{filename, url}]``.
 
-    Prefers the ``share_file`` items embedded in the response ``output`` (they
-    carry a ready download ``url``); falls back to ``GET /v1/responses/{id}/
-    files`` and constructs the content path.
+    Prefers ``share_file`` items embedded in the response ``output`` and
+    constructs their content paths from ``file_id``. Falls back to
+    ``GET /v1/responses/{id}/files``.
     """
     files: List[Dict[str, str]] = []
-    for item in response.get("output", []) or []:
-        if item.get("type") == "share_file" and item.get("url"):
-            files.append({"filename": item.get("filename", ""), "url": item["url"]})
-    if files:
-        return files
-
     response_id = response.get("id")
     if not response_id:
         return files
+
+    for item in response.get("output", []) or []:
+        if item.get("type") == "share_file" and item.get("file_id"):
+            files.append({
+                "filename": item.get("filename", ""),
+                "url": (
+                    f"{RESPONSES_PATH}/{response_id}/files/"
+                    f"{item['file_id']}/content"
+                ),
+            })
+    if files:
+        return files
+
     status, body = _request(
         "GET", f"{base_url}{RESPONSES_PATH}/{response_id}/files", key, None, timeout=60
     )

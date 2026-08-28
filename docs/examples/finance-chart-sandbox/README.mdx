@@ -24,8 +24,8 @@ The script polls the request to completion and downloads both files — no local
 
 This recipe was built and verified against the live Agent API. A few realities shape the design:
 
-- **The `sandbox` tool requires a background task.** On the synchronous/streaming path the request is rejected with `streaming failed: ... unknown tool "sandbox"`. You must submit with `background: true` and poll the response by id. This script always does that.
-- **The sandbox returns files.** Anything the sandbox writes to its working directory comes back as a `share_file` output item carrying a `file_id`, `filename`, and a ready `/v1/responses/{id}/files/{file_id}/content` URL — you can also list them with `GET /v1/responses/{id}/files`. The script downloads the `prices.csv` and `chart.png` artifacts directly, instead of scraping anything out of `stdout`.
+- **Use background mode for a resilient long-running task.** This script submits with `background: true` and polls the response by id, so the sandbox run can continue if the client disconnects. See [Background mode](/docs/agent-api/background-mode) for the request lifecycle.
+- **The sandbox returns files.** Anything the sandbox writes to its working directory comes back as a `share_file` output item carrying a `file_id` and `filename`. Construct the `/v1/responses/{id}/files/{file_id}/content` download path from those identifiers, or list files with `GET /v1/responses/{id}/files`. The script downloads the `prices.csv` and `chart.png` artifacts directly instead of scraping anything out of `stdout`.
 - **Pin the data source to cut latency.** The slow part of an unconstrained sandbox run is the model *hunting* for a price source (public pages `429` or gate behind captchas — easily 3–7 sandbox calls). Telling it to hit Yahoo's v8 chart JSON endpoint directly turns that into a **single** fetch, and leaves token budget to render the chart in the same session. A typical run is now **one sandbox invocation**.
 - **Give the sandbox output-token headroom.** The sandbox spends `max_output_tokens` *writing the code* that fetches the data and renders the chart. A tight cap can starve the file-writing step (the data gets fetched but the files are never written). This recipe uses `8192`.
 - **`finance_search` has no history (current deployment).** The top-level `finance_search` tool returns only the *latest quote* — a single row — so it can't produce a price *series*. The history is fetched inside the sandbox instead.
@@ -45,7 +45,7 @@ The Agent API is called over **raw HTTP** (stdlib `urllib`, no SDK) so the exact
 ## Prerequisites
 
 - Python 3.9+
-- A Perplexity API key with Agent API access. The `sandbox` tool is in **preview** — see the [sandbox docs](https://docs.perplexity.ai/docs/agent-api/tools/sandbox) for availability.
+- A Perplexity API key with Agent API access. See the [sandbox docs](https://docs.perplexity.ai/docs/agent-api/tools/sandbox) for current behavior and limits.
 
 ## Installation
 
@@ -133,8 +133,8 @@ renders the chart in the sandbox, and the page shows the result.
 
 Unlike the CLI (which calls the API over raw HTTP), the web backend uses the
 **Perplexity Python SDK** and reuses the CLI module's parsing and shared-file
-helpers. It runs a **two-phase** flow, because the `sandbox` tool only runs as a
-(non-streamable) background task:
+helpers. It runs a **two-phase** flow so the sandbox work survives client
+disconnects while the final analysis can stream:
 
 1. **Data** — a background call (`client.responses.create(..., background=True)`
    then `client.responses.retrieve(id)`) where the sandbox resolves the ticker +
@@ -183,7 +183,7 @@ payload = {
     "instructions": SYSTEM_PROMPT,           # "fetch from Yahoo v8, write CSV + render PNG"
     "input": "Fetch this exact URL ... Write prices.csv and render chart.png for AAPL ...",
     "tools": [{"type": "sandbox"}],
-    "background": True,                       # required for the sandbox tool
+    "background": True,                       # keep the long-running task alive
     "max_output_tokens": 8192,                # headroom for the in-sandbox code
     "max_steps": 15,
 }
@@ -206,12 +206,12 @@ while body["status"] in ("queued", "in_progress"):
 ```python
 for item in body["output"]:
     if item["type"] == "share_file":
-        url = item["url"]   # /v1/responses/{id}/files/{file_id}/content
+        url = f"/v1/responses/{body['id']}/files/{item['file_id']}/content"
         # item["filename"] is "prices.csv" or "chart.png"
 data = get_raw(url)         # Authorization: Bearer <key>
 ```
 
-The script reads the `share_file` items off the response (falling back to `GET /v1/responses/{id}/files` if none are inlined), downloads both the `.csv` and the `.png`, validates the CSV parses into ≥2 `date,close` rows, and retries the whole call if not.
+The script constructs each download path from the `share_file` item's `file_id` (falling back to `GET /v1/responses/{id}/files` if none are inlined), downloads both the `.csv` and the `.png`, validates the CSV parses into ≥2 `date,close` rows, and retries the whole call if not.
 
 **4. Keep the files.** The CSV and the sandbox-rendered PNG are written to disk — there's nothing to render client-side, so the CLI has no third-party dependencies. (The CSV is parsed only to report the series length.)
 
@@ -232,7 +232,7 @@ Sandbox invocations are counted under `usage.tool_calls_details.sandbox.invocati
 
 ## Limitations
 
-- `sandbox` is in **preview** and must be run as a background task
+- This example deliberately uses background mode, so callers must poll until the response reaches a terminal status
 - Price history comes from third-party sources (Yahoo v8 chart JSON, Stooq fallback) fetched inside the sandbox, so **data accuracy and availability depend on those sources** — values should be sanity-checked, and obscure/non-US tickers may fail (Stooq expects a `.us` suffix)
 - Fetching is **best-effort**: rate limits can cause an attempt to return no files; the script retries, but a run may still fail (raise `--attempts`)
 - Each attempt is a separate billed sandbox session
