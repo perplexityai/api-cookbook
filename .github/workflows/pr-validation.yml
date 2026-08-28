@@ -12,16 +12,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
           
       - name: MDX validation dependencies
-        run: npm install --save-dev @mdx-js/mdx @mdx-js/loader glob
+        run: npm ci
         
       - name: Validate MDX files
         run: node scripts/validate-mdx.js
@@ -30,7 +30,7 @@ jobs:
         run: |
           # Simple check for common broken link patterns
           echo "Checking for potential broken links..."
-          if grep -r "http://localhost\|http://127.0.0.1" docs/ --exclude-dir=showcase; then
+          if grep -r "http://localhost\|http://127.0.0.1" docs/; then
             echo "❌ Found localhost links that should be removed"
             exit 1
           fi

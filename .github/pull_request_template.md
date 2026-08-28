@@ -3,7 +3,6 @@ Brief description of your contribution
 
 ## Type of Contribution
 - [ ] Example Tutorial
-- [ ] Showcase Project
 - [ ] Article/Integration Guide
 - [ ] Documentation Update
 - [ ] Bug Fix
@@ -22,7 +21,7 @@ Brief description of your contribution
 <!-- Describe the problem or use case your contribution addresses -->
 
 **What makes this contribution valuable to other developers?**
-<!-- Explain why this would be helpful to others using the Perplexity Sonar API -->
+<!-- Explain why this would be helpful to others using the Perplexity API Platform -->
 
 **External Links (if applicable):**
 - GitHub Repository: 

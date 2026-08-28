@@ -2,7 +2,11 @@ name: Sync Cookbook to Docs Site
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "static/**"
+      - ".github/workflows/sync-to-docs.yml"
   workflow_dispatch:
 
 jobs:
@@ -10,139 +14,84 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cookbook repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           path: cookbook-repo
-          
+
       - name: Checkout docs repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           repository: ${{ secrets.DOCS_REPO_NAME || 'ppl-ai/api-docs' }}
           token: ${{ secrets.DOCS_REPO_TOKEN }}
+          ref: main
           path: docs-repo
-          
+
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: docs-repo/package.json
-          
+          node-version: "20"
+
       - name: Install docs dependencies
+        working-directory: docs-repo
         run: |
-          cd docs-repo
-          npm install
-          
-      - name: Clear existing cookbook content
+          corepack enable
+          corepack prepare pnpm@10.32.1 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Mirror cookbook content
         run: |
-          rm -rf docs-repo/cookbook/* || true
-          
-      - name: Copy cookbook content to docs repository
-        run: |
-          # Create cookbook directory if it doesn't exist
-          mkdir -p docs-repo/cookbook
-          
-          # Copy docs content from cookbook to docs repo (already in MDX format)
-          cp -r cookbook-repo/docs/* docs-repo/cookbook/
-          
-          # Copy static assets if they exist
-          if [ -d "cookbook-repo/static" ]; then
-            mkdir -p docs-repo/cookbook/static
-            cp -r cookbook-repo/static/* docs-repo/cookbook/static/
-          fi
-          
-      - name: Generate cookbook navigation
-        run: |
-          cd docs-repo  
-          # Run the navigation generation script
-          node scripts/generate-cookbook-nav.js
-          
+          mkdir -p docs-repo/docs/cookbook
+          rsync -a --delete cookbook-repo/docs/ docs-repo/docs/cookbook/
+          mkdir -p docs-repo/docs/cookbook/static
+          rsync -a --delete cookbook-repo/static/ docs-repo/docs/cookbook/static/
+
       - name: Configure git
+        working-directory: docs-repo
         run: |
-          cd docs-repo
           git config --local user.email "cookbook-sync@perplexity.ai"
           git config --local user.name "Cookbook Sync Bot"
-          
-      - name: Commit and push changes
-        run: |
-          cd docs-repo
-          git add .
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-            echo "CHANGES_MADE=false" >> $GITHUB_ENV
-          else
-            git commit -m "📚 Sync cookbook from ${{ github.repository }}@${{ github.sha }}
 
-            Updated cookbook content and navigation from community contributions.
-            
-            Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
-            git push
-            echo "CHANGES_MADE=true" >> $GITHUB_ENV
+      - name: Commit source content before generation
+        working-directory: docs-repo
+        run: |
+          git add docs/cookbook
+          if git diff --staged --quiet; then
+            echo "SOURCE_COMMIT_CREATED=false" >> "$GITHUB_ENV"
+          else
+            git commit -m "Sync cookbook from ${{ github.repository }}@${{ github.sha }}"
+            echo "SOURCE_COMMIT_CREATED=true" >> "$GITHUB_ENV"
           fi
-          
-      - name: Create deployment comment
-        if: env.CHANGES_MADE == 'true'
-        continue-on-error: true
-        uses: actions/github-script@v8
-        with:
-          script: |
-            try {
-              const { owner, repo } = context.repo;
-              const sha = context.sha;
-              
-              await github.rest.repos.createCommitComment({
-                owner,
-                repo, 
-                commit_sha: sha,
-                body: `✅ **Cookbook sync completed successfully!**
-                
-                The cookbook content has been synced to the docs site and navigation has been updated automatically.
-                
-                📈 Changes will be live on docs.perplexity.ai within a few minutes.
-                
-                🔗 [View docs site](https://docs.perplexity.ai/cookbook)`
-              });
-              console.log('✅ Success comment posted successfully');
-            } catch (error) {
-              console.log('⚠️ Could not post comment (insufficient permissions):', error.message);
-              console.log('✅ Sync completed successfully anyway!');
-            }
-            
-      - name: Report sync failure
-        if: failure()
-        continue-on-error: true
-        uses: actions/github-script@v8
-        with:
-          script: |
-            try {
-              const { owner, repo } = context.repo;
-              const sha = context.sha;
-              
-              await github.rest.repos.createCommitComment({
-                owner,
-                repo,
-                commit_sha: sha,
-                body: `❌ **Cookbook sync failed**
-                
-                There was an error syncing the cookbook content to the docs site. 
-                Please check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
-                
-                The docs site may not reflect the latest cookbook changes until this is resolved.`
-              });
-            } catch (error) {
-              console.log('⚠️ Could not post failure comment (insufficient permissions):', error.message);
-              console.log('❌ Sync failed - check workflow logs for details');
-            }
-            
+
+      - name: Generate cookbook navigation and gallery
+        working-directory: docs-repo
+        run: pnpm sync-cookbook
+
+      - name: Commit and push generated content
+        working-directory: docs-repo
+        run: |
+          changes_made=false
+          git add config/navigation.json snippets/cookbookData.jsx
+          if ! git diff --staged --quiet; then
+            if [ "$SOURCE_COMMIT_CREATED" = "true" ]; then
+              git commit --amend --no-edit
+            else
+              git commit -m "Regenerate cookbook navigation and gallery"
+            fi
+            changes_made=true
+          elif [ "$SOURCE_COMMIT_CREATED" = "true" ]; then
+            changes_made=true
+          fi
+          echo "CHANGES_MADE=$changes_made" >> "$GITHUB_ENV"
+
+          if [ "$changes_made" = "true" ]; then
+            git push origin HEAD:main
+          fi
+
       - name: Log sync status
         if: always()
         run: |
           if [ "${{ env.CHANGES_MADE }}" = "true" ]; then
-            echo "🎉 COOKBOOK SYNC SUCCESS!"
-            echo "📚 Content synced to docs repository"
-            echo "🔧 Navigation updated automatically"
-            echo "🚀 Changes will be live on docs.perplexity.ai within minutes"
+            echo "Cookbook content and generated navigation were synced."
           else
-            echo "ℹ️  No changes to sync"
-            echo "📄 Cookbook content is already up to date"
-          fi 
+            echo "Cookbook content is already up to date."
+          fi

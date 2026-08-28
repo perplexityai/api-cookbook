@@ -1,192 +1,113 @@
 ---
 title: Examples Overview
-description: Ready-to-use applications demonstrating Perplexity Sonar API capabilities
+description: Runnable projects covering the Agent API, Search API, and Embeddings API
 sidebar_position: 1
-keywords: [examples, applications, demos, sonar-api]
+keywords: [examples, applications, demos, agent-api, search-api, embeddings]
 ---
 
 # Examples Overview
 
-Welcome to the **Perplexity Sonar API Examples** collection! These are production-ready applications that demonstrate real-world use cases of the Sonar API.
+Ready-to-run projects that demonstrate real-world use cases across every Perplexity API. Each example includes complete setup instructions and working code.
 
-## 🚀 Quick Start
+## Choosing the Right Example
 
-Navigate to any example directory and follow the instructions in the README.md file.
+| If you want to... | Use this example | API | Language |
+|---|---|---|---|
+| Conduct deep web research | [Agent Research Assistant](/docs/cookbook/examples/agent-research-assistant/README) | Agent API | Python, TypeScript |
+| Monitor news topics in real time | [Search News Monitor](/docs/cookbook/examples/search-news-monitor/README) | Search API | Python, TypeScript |
+| Build a document Q&A system | [Document Q&A](/docs/cookbook/examples/document-qa/README) | Embeddings + Agent API | Python |
+| Build a TypeScript CLI agent | [TypeScript Agent CLI](/docs/cookbook/examples/typescript-agent-cli/README) | Agent API | TypeScript |
+| Analyze images with web context | [Image Analysis](/docs/cookbook/examples/image-analysis/README) | Agent API | Python, TypeScript |
+| Ask questions about uploaded files | [File Attachment Q&A](/docs/cookbook/examples/file-attachment-qa/README) | Agent API | Python |
+| Search SEC filings for financial data | [SEC Filing Search](/docs/cookbook/examples/sec-filing-search/README) | Agent API | Python |
+| Run code and build a PDF in a sandbox | [Competitor Buzz Tracker](/docs/cookbook/examples/competitor-buzz-tracker/README) | Agent API | Python |
+| Source candidates for a hiring brief | [Talent Sourcer](/docs/cookbook/examples/talent-sourcer/README) | Agent API | Python |
+| Pick an open model via an MCP server | [Model Picker](/docs/cookbook/examples/model-picker/README) | Agent API | Python |
+| Chart stock-price history in a sandbox | [Finance Chart](/docs/cookbook/examples/finance-chart-sandbox/README) | Agent API | Python |
+| Generate a focused financial briefing | [SpaceX Financial Briefing](/docs/cookbook/examples/spacex-spcx-briefing/README) | Agent API | Python |
 
-## 📋 Available Examples
+## By API
 
-### 🔍 [Fact Checker CLI](fact-checker-cli/)
+### Agent API
 
-**Purpose**: Verify claims and articles for factual accuracy  
-**Type**: Command-line tool  
-**Use Cases**: Journalism, research, content verification  
+<CardGroup cols={2}>
+<Card title="Agent Research Assistant" icon="magnifying-glass" href="/docs/cookbook/examples/agent-research-assistant/README">
+Deep web research using the `medium` preset with structured report output.
+</Card>
 
-**Key Features**:
-- Structured claim analysis with ratings
-- Source citation and evidence tracking
-- JSON output for automation
-- Professional fact-checking workflow
+<Card title="TypeScript Agent CLI" icon="terminal" href="/docs/cookbook/examples/typescript-agent-cli/README">
+Interactive TypeScript CLI with streaming, model selection, and web search.
+</Card>
 
-**Quick Start**:
+<Card title="Image Analysis" icon="image" href="/docs/cookbook/examples/image-analysis/README">
+Vision + web search for context-enriched image analysis.
+</Card>
+
+<Card title="File Attachment Q&A" icon="file-lines" href="/docs/cookbook/examples/file-attachment-qa/README">
+Upload documents and ask questions about them with optional web search enrichment.
+</Card>
+
+<Card title="Competitor Buzz Tracker" icon="chart-line" href="/docs/cookbook/examples/competitor-buzz-tracker/README">
+Two chained agent requests: the sandbox searches and counts each brand's share of voice, then renders a downloadable bar-chart PDF.
+</Card>
+
+<Card title="Talent Sourcer" icon="users" href="/docs/cookbook/examples/talent-sourcer/README">
+Wide search in a sandbox: source engineers by skill, location, and tenure, verify each, and rank them with their GitHub and profile links into an HTML shortlist.
+</Card>
+
+<Card title="Model Picker" icon="robot" href="/docs/cookbook/examples/model-picker/README">
+Connect the Hugging Face MCP server and web search in one request: find open models on the live Hub, verify their downloads and license, and check benchmarks before recommending one.
+</Card>
+
+<Card title="Finance Chart" icon="chart-line" href="/docs/cookbook/examples/finance-chart-sandbox/README">
+Fetch stock-price history and render CSV and PNG artifacts inside the Agent API sandbox.
+</Card>
+
+<Card title="SpaceX Financial Briefing" icon="chart-line" href="/docs/cookbook/examples/spacex-spcx-briefing/README">
+Build a quantitative briefing for a newly listed ticker with Finance Search.
+</Card>
+</CardGroup>
+
+### Search API
+
+<CardGroup cols={2}>
+<Card title="Search News Monitor" icon="newspaper" href="/docs/cookbook/examples/search-news-monitor/README">
+Multi-topic news monitoring with domain filtering and recency control.
+</Card>
+
+<Card title="SEC Filing Search" icon="file-invoice" href="/docs/cookbook/examples/sec-filing-search/README">
+Search SEC.gov and EDGAR for financial filings with structured data extraction.
+</Card>
+</CardGroup>
+
+### Embeddings API
+
+<CardGroup cols={2}>
+<Card title="Document Q&A" icon="file-lines" href="/docs/cookbook/examples/document-qa/README">
+Self-contained RAG system with contextualized embeddings and Agent API answer generation.
+</Card>
+</CardGroup>
+
+## API Key Setup
+
+All examples require a Perplexity API key. Set it as an environment variable:
+
 ```bash
-cd fact-checker-cli/
-python fact_checker.py --text "The Earth is flat"
+export PERPLEXITY_API_KEY="your-api-key-here"
 ```
 
----
+<Tip>
+Get your API key at [perplexity.ai/account/api](https://perplexity.ai/account/api).
+</Tip>
 
-### 🤖 [Daily Knowledge Bot](daily-knowledge-bot/)
+## Common Requirements
 
-**Purpose**: Automated daily fact delivery system  
-**Type**: Scheduled Python application  
-**Use Cases**: Education, newsletters, personal learning  
-
-**Key Features**:
-- Topic rotation based on calendar
-- Persistent storage of facts
-- Configurable scheduling
-- Educational content generation
-
-**Quick Start**:
-```bash
-cd daily-knowledge-bot/
-python daily_knowledge_bot.py
-```
-
----
-
-### 🏥 [Disease Information App](disease-qa/)
-
-**Purpose**: Interactive medical information lookup  
-**Type**: Web application (HTML/JavaScript)  
-**Use Cases**: Health education, medical reference, patient information  
-
-**Key Features**:
-- Interactive browser interface
-- Structured medical knowledge cards
-- Citation tracking for medical sources
-- Standalone deployment ready
-
-**Quick Start**:
-```bash
-cd disease-qa/
-jupyter notebook disease_qa_tutorial.ipynb
-```
-
----
-
-### 📊 [Financial News Tracker](financial-news-tracker/)
-
-**Purpose**: Real-time financial news monitoring and market analysis  
-**Type**: Command-line tool  
-**Use Cases**: Investment research, market monitoring, financial journalism  
-
-**Key Features**:
-- Real-time financial news aggregation
-- Market sentiment analysis (Bullish/Bearish/Neutral)
-- Impact assessment and sector analysis
-- Investment insights and recommendations
-
-**Quick Start**:
-```bash
-cd financial-news-tracker/
-python financial_news_tracker.py "tech stocks"
-```
-
----
-
-### 📈 [Equity Research Brief](equity-research-brief/)
-
-**Purpose**: Generate institutional-grade equity research briefs for any public ticker  
-**Type**: Command-line tool  
-**Use Cases**: Investor workflows, fundamental analysis, earnings prep, peer benchmarking  
-
-**Key Features**:
-- Uses the Agent API's built-in `finance_search` tool for structured fundamentals
-- Three preset configurations (live quote, single-company, multi-step research)
-- Cites Perplexity finance source URLs alongside the brief
-- Reports `finance_search` invocation count and total request cost
-
-**Quick Start**:
-```bash
-cd equity-research-brief/
-python equity_research_brief.py NVDA
-```
-
----
-
-### 📚 [Academic Research Finder](research-finder/)
-
-**Purpose**: Academic literature discovery and summarization  
-**Type**: Command-line research tool  
-**Use Cases**: Academic research, literature reviews, scholarly work  
-
-**Key Features**:
-- Academic source prioritization
-- Paper citation extraction with DOI links
-- Research-focused prompting
-- Scholarly workflow integration
-
-**Quick Start**:
-```bash
-cd research-finder/
-python research_finder.py "quantum computing advances"
-```
-
-## 🔑 API Key Setup
-
-All examples require a Perplexity API key. You can set it up in several ways:
-
-### Environment Variable (Recommended)
-```bash
-export PPLX_API_KEY="your-api-key-here"
-```
-
-### .env File
-Create a `.env` file in the example directory:
-```bash
-PERPLEXITY_API_KEY=your-api-key-here
-```
-
-### Command Line Argument
-```bash
-python script.py --api-key your-api-key-here
-```
-
-## 🛠️ Common Requirements
-
-All examples require:
-- **Python 3.7+**
-- **Perplexity API Key** ([Get one here](https://docs.perplexity.ai/guides/getting-started))
+- **Python 3.9+** or **Node.js 18+** (depending on the example)
+- **Perplexity API Key**
 - **Internet connection** for API calls
 
-Additional requirements vary by example and are listed in each `requirements.txt` file.
+Additional requirements vary by example and are listed in each project's documentation.
 
-## 🎯 Choosing the Right Example
+## Contributing
 
-| **If you want to...** | **Use this example** |
-|------------------------|----------------------|
-| Verify information accuracy | **Fact Checker CLI** |
-| Learn something new daily | **Daily Knowledge Bot** |
-| Look up medical information | **Disease Information App** |
-| Track financial markets | **Financial News Tracker** |
-| Generate an equity research brief | **Equity Research Brief** |
-| Research academic topics | **Academic Research Finder** |
-
-## 🤝 Contributing
-
-Found a bug or want to improve an example? We welcome contributions!
-
-1. **Report Issues**: Open an issue describing the problem
-2. **Suggest Features**: Propose new functionality or improvements
-3. **Submit Code**: Fork, implement, and submit a pull request
-
-See our [Contributing Guidelines](https://github.com/ppl-ai/api-cookbook/blob/main/CONTRIBUTING.md) for details.
-
-## 📄 License
-
-All examples are licensed under the [MIT License](https://github.com/ppl-ai/api-cookbook/blob/main/LICENSE).
-
----
-
-**Ready to explore?** Pick an example above and start building with Perplexity's Sonar API! 🚀 
+Found a bug or want to add an example? See our [Contributing Guidelines](https://github.com/perplexityai/api-cookbook/blob/main/CONTRIBUTING.md).

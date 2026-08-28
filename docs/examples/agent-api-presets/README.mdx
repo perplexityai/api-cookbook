@@ -1,0 +1,241 @@
+---
+title: "Customizing Presets"
+sidebar_position: 21
+keywords: [agent-api, presets, configuration, tool-options, reproducibility, python]
+products: [agent-api]
+categories: []
+---
+
+Models, tools, and capabilities change quickly. It can be a full time job to keep your agent code updated with the ideal configurations for your use case. That's what Perplexity presets help solve.
+
+## Start from a preset
+
+A preset is a Perplexity maintained bundle of Agent API settings that packages together a model, search config, reasoning steps, system prompt, and available tools. Perplexity updates the underlying configurations as evaluations improve, and your calls receive the updates without needing to adjust your code.
+
+What if the chosen preset doesn't quite meet all of your needs? Imagine, for instance, that you found a preset configuration that almost perfectly meets your needs, with the exception of one or two fields that you'd like to tune. You can pass your preset by name and then modify only the fields that need adjustment. All the other preset fields will continue to use their defaults.
+
+## Check the prerequisites
+
+You need Python 3.10 or newer, the `perplexityai` library installed, and an API key exported as `PERPLEXITY_API_KEY`. Create the key at [console.perplexity.ai/group/keys](https://console.perplexity.ai/group/keys). If you have never called the API before, run through the [Perplexity API quickstart](https://docs.perplexity.ai/docs/getting-started/quickstart) first.
+
+```bash
+pip install perplexityai
+export PERPLEXITY_API_KEY="pplx-..."
+```
+
+## Run a basic example
+
+Every example in this tutorial uses the `low` preset unless noted. Start by calling it with nothing but a prompt.
+
+```python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+response = client.responses.create(
+    preset="low",
+    input="Summarize the current Perplexity Agent API pricing page.",
+)
+
+print("model:", response.model)
+print(response.output_text)
+```
+
+The `low` preset supplies the model, search config, reasoning steps, system prompt, and available tools. Your request adds only the input.
+
+## Customize a preset in two moves
+
+Two techniques cover almost every real customization: override a top-level field, and adjust options for one tool. The last section shows how to inspect what ran.
+
+### 1. Override one parameter
+
+Override a parameter when the preset almost fits but one field needs to change. Pass that field on the request; every other field keeps its default value.
+
+`low` documents a low `max_steps` default (check the current presets documentation for the current value). Raise the ceiling when a task needs more reasoning or tool-use iterations:
+
+```python
+response = client.responses.create(
+    preset="low",
+    input="Summarize this week's Agent API changelog.",
+    max_steps=8,
+)
+
+print("model:", response.model)
+print("status:", response.status)
+print("tool invocations:", response.usage.tool_calls_details)
+```
+
+### 2. Adjust options for one tool
+
+Adjust tool options when the preset's tool set is right for the job but one tool needs tuning. Pass a partial entry for that tool and the preset's other tools stay attached.
+
+`low` invokes `fetch_url` by default when a prompt names a URL. Pass a partial `web_search` override and `fetch_url` still runs:
+
+```python
+response = client.responses.create(
+    preset="low",
+    input=(
+        "Read https://docs.perplexity.ai/docs/agent-api/presets "
+        "and list the preset names on that page."
+    ),
+    tools=[{
+        "type": "web_search",
+        "max_tokens": 6000,
+        "max_tokens_per_page": 1200,
+    }],
+)
+
+print("model:", response.model)
+print("tools ran:", list(response.usage.tool_calls_details.keys()))
+```
+
+Live run on August 19, 2026 with `perplexityai==0.43.3`:
+
+```text
+model: openai/gpt-5.6-luna
+tools ran: ['fetch_url']
+```
+
+The request adjusted `web_search`, but `fetch_url` is what actually ran because the prompt asked to read a URL and `fetch_url` is the tool for that job. The evidence is `usage.tool_calls_details`: `fetch_url` appears there even though the request never passed a `fetch_url` entry. That is tool merging. To also tune `fetch_url`, add a `fetch_url` entry to `tools` alongside `web_search`.
+
+## Put both moves together: an evidence-based rollout decision
+
+Let's tie these concepts together. Suppose the performance lead for a CPU-bound service is deciding whether to pilot Python 3.14's free-threaded build. `low` is a good base, but this task needs more reasoning room (an override) and deeper context from two specific technical pages (a tool merge).
+
+```python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+response = client.responses.create(
+    preset="low",
+    input=(
+        "You are the performance lead for a CPU-bound fraud-scoring service. "
+        "The team proposes piloting Python 3.14's free-threaded build in "
+        "production. Create an adoption brief of at most 450 words with exactly "
+        "these Markdown headings: ## Decision, ## Three technical risks, "
+        "## Five benchmark gates, and ## Two stop conditions. Make each list "
+        "match the number in its heading. For every risk, separate the "
+        "documented behavior from its implication for this service. Use only "
+        "the sources allowed by the web_search tool. Cite factual claims inline "
+        "using numeric result IDs, one source per bracket, like [1][2]. Never "
+        "invent citation IDs. Do not include shell commands."
+    ),
+    max_steps=8,
+    tools=[{
+        "type": "web_search",
+        "search_context_size": "high",
+        "filters": {
+            "search_domain_filter": [
+                "docs.python.org/3.14/whatsnew/3.14.html",
+                "docs.python.org/3/howto/free-threading-python.html",
+            ],
+        },
+    }],
+)
+
+print(response.output_text)
+
+print("\n--- Observed run ---")
+print("model:      ", response.model)
+print("status:     ", response.status)
+print("tools:      ", response.usage.tool_calls_details)
+print("total cost: $", response.usage.cost.total_cost)
+```
+
+Every piece of the call has a job:
+
+| Concern | Supplied by |
+|---|---|
+| Maintained model, system prompt, reasoning, defaults, and unlisted tools | `low` preset |
+| Application task and output contract | `input` |
+| Additional reasoning room | `max_steps=8` override |
+| Deeper evidence extraction | `search_context_size="high"` tool merge |
+| Trusted-source policy | URL-level `search_domain_filter` tool merge |
+| Runtime evidence | Response metadata |
+
+A representative live run on August 19, 2026 with `perplexityai==0.43.3` produced this brief (`response.output_text`):
+
+```markdown
+## Decision
+
+Pilot Python 3.14's free-threaded build in production only as a tightly scoped canary, not as the default runtime. Python 3.14 officially supports free-threading, but it remains optional; third-party extension compatibility and workload-specific scaling are still material uncertainties. [1][2] Require a GIL-enabled rollback path, identical capacity controls, and the benchmark gates below before expanding traffic.
+
+## Three technical risks
+
+1. **Documented behavior:** Free-threaded execution adds single-thread overhead: approximately 1-8% across `pyperformance`, depending on platform and hardware. [2] **Implication:** A fraud request that is mostly serial Python may become slower or require more CPU, even if multi-threaded throughput improves.
+
+2. **Documented behavior:** Some C extensions are not ready for free-threaded operation and can automatically re-enable the GIL when imported; a warning is emitted. [2] **Implication:** The service's supposedly parallel workers could silently serialize, making throughput and tail-latency results misleading. Audit every dependency and fail the pilot if the GIL is re-enabled unexpectedly.
+
+3. **Documented behavior:** Built-in containers provide protections resembling GIL-era behavior, but shared iterators are generally not thread-safe, and concurrent frame access can crash the interpreter. [2] **Implication:** Existing "safe because of the GIL" assumptions in feature extraction, caching, or model plumbing may produce races, corrupted results, or process crashes. Treat shared mutable state as requiring explicit synchronization.
+
+## Five benchmark gates
+
+1. **Correctness:** Run production-representative replay against the GIL build; require identical fraud decisions, scores, error classifications, and audit records.
+
+2. **Throughput:** At the target core allocation and realistic thread count, require at least 1.20x sustained requests/second versus the GIL build.
+
+3. **Latency:** At p50, p95, and p99 under peak load, require no regression greater than 5%, with zero missed service-level objectives.
+
+4. **CPU efficiency:** Require at least 10% lower CPU-seconds per scored request at equal traffic; separately measure scaling as workers increase, because free-threading does not automatically benefit every program. [2]
+
+5. **Operational safety:** Soak-test for 24 hours with production dependency versions; require zero crashes, deadlocks, data races, unexpected GIL re-enablement warnings, or memory growth beyond the GIL build's agreed budget. Free-threaded builds typically use more memory. [2]
+
+## Two stop conditions
+
+1. **Immediate rollback:** Stop the pilot and revert to the GIL build if correctness differs, the SLO is breached, a crash/deadlock occurs, or any dependency re-enables the GIL in the production path.
+
+2. **No-go after pilot:** Do not expand beyond the canary if any benchmark gate fails, especially if throughput gains do not compensate for the documented single-thread overhead, or if memory/capacity cost exceeds the approved budget.
+```
+
+And this observed-run block:
+
+```text
+model:       openai/gpt-5.6-luna
+status:      completed
+tools:       {'search_web': ToolCallDetailsOutput(invocation=2)}
+total cost:  $0.00672
+```
+
+The brief came in at 410 words, followed every requested heading and list count, used valid numeric citations, and drew only from the two allowed official Python pages. Factual spot checks confirmed its claims about parallel execution, extension-triggered GIL re-enablement, iterator safety, official Python 3.14 support, and the documented single-thread performance penalty.
+
+Output will vary between runs. Generated rollout advice is still a draft: validate citation IDs against the response's search results and review consequential recommendations before using them in production.
+
+## Inspect what actually ran
+
+You need a way to check what the API actually served. Read `response.model` for the backing model, `response.usage.tool_calls_details` for the tools that ran, and `response.usage.cost.total_cost` for the billed amount. The response does not expose the effective system prompt, `max_steps`, reasoning, or the full inherited tool set, so treat this as inspection of the observed run rather than of the preset's configuration.
+
+```python
+def inspect(preset: str, prompt: str) -> None:
+    response = client.responses.create(preset=preset, input=prompt)
+    print(f"preset={preset}")
+    print(f"  model:       {response.model}")
+    print(f"  status:      {response.status}")
+    print(f"  invocations: {response.usage.tool_calls_details}")
+    print(f"  total_cost:  ${response.usage.cost.total_cost}")
+
+inspect("low", "Summarize the current Perplexity Agent API pricing page.")
+```
+
+Your numbers will differ. Live run on August 19, 2026 with `perplexityai==0.43.3`:
+
+```text
+preset=low
+  model:       openai/gpt-5.6-luna
+  status:      completed
+  invocations: {'fetch_url': ToolCallDetailsOutput(invocation=1), 'search_web': ToolCallDetailsOutput(invocation=1)}
+  total_cost:  $0.01812
+```
+
+Inspect what ran on any request where correctness or cost matters. It lets you see which model handled the call, which tools ran, and the call's cost.
+
+## Summary
+
+Presets give you a maintained Agent API configuration you can call by name. Override one field to change one thing without losing the other defaults. Merge tool options to tune a tool while keeping the preset's other available tools attached. Read `response.model` and `response.usage.tool_calls_details` to inspect your calls.
+
+## Resources
+
+- [Agent API presets](https://docs.perplexity.ai/docs/agent-api/presets)
+- [Agent API quickstart](https://docs.perplexity.ai/docs/agent-api/quickstart)
+- [Web Search](https://docs.perplexity.ai/docs/agent-api/tools/web-search)
+- [Perplexity API pricing](https://docs.perplexity.ai/docs/getting-started/pricing)

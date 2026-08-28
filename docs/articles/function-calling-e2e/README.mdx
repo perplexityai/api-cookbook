@@ -1,0 +1,938 @@
+---
+title: Function Calling End-to-End
+description: Complete multi-turn function calling patterns for the Perplexity Agent API, including orchestration, web search integration, error handling, and parallel calls
+keywords: [function-calling, tools, agent-api, multi-turn, orchestration, parallel, web-search]
+products: [agent-api]
+categories: [function-calling, orchestration]
+---
+
+This guide covers production-ready function calling patterns that go beyond the basics. You will learn the complete multi-turn flow, multi-function orchestration, combining custom functions with built-in tools, robust error handling, and parallel function call processing.
+
+<Info>
+This guide assumes familiarity with the Agent API and its tool definitions. For parameter reference and basic usage, see the [Agent API reference](/api-reference/agent-post).
+</Info>
+
+## Prerequisites
+
+Install the Perplexity SDK:
+
+<CodeGroup>
+```bash Python
+pip install perplexityai
+```
+
+```bash TypeScript
+npm install @perplexity-ai/perplexity_ai
+```
+</CodeGroup>
+
+If you don't have an API key yet:
+
+<Card title="Get your Perplexity API Key" icon="key" arrow="True" horizontal="True" iconType="solid" cta="Click here" href="https://perplexity.ai/account/api">
+Navigate to the **API Keys** tab in the API Portal and generate a new key.
+</Card>
+
+Then export your API key as an environment variable:
+```bash
+export PERPLEXITY_API_KEY="your-api-key"
+```
+
+<Tip>
+For built-in tools, start with [Web Search](/docs/agent-api/tools/web-search), [Fetch URL Content](/docs/agent-api/tools/fetch-url-content), [Finance Search](/docs/agent-api/tools/finance-search), and [People Search](/docs/agent-api/tools/people-search). This guide focuses on custom function orchestration patterns in application code.
+</Tip>
+
+## Complete Multi-Turn Flow
+
+The core function calling loop follows a specific pattern: send a request with tool definitions, detect `function_call` items in the response, execute your functions locally, then return the results as `function_call_output` items.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+import json
+
+client = Perplexity()
+
+# Step 1: Define tools
+tools = [
+    {
+        "type": "function",
+        "name": "lookup_order",
+        "description": "Look up an order by order ID. Returns order status, items, and shipping info.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "order_id": {
+                    "type": "string",
+                    "description": "The unique order identifier, e.g. ORD-12345"
+                }
+            },
+            "required": ["order_id"]
+        }
+    }
+]
+
+# Your actual function implementation
+def lookup_order(order_id: str) -> dict:
+    # In production, query your database or order management system
+    return {
+        "order_id": order_id,
+        "status": "shipped",
+        "items": ["Wireless Headphones", "USB-C Cable"],
+        "tracking_number": "1Z999AA10123456784",
+        "estimated_delivery": "2026-03-02"
+    }
+
+# Step 2: Send the initial request
+response = client.responses.create(
+    model="anthropic/claude-sonnet-4-6",
+    tools=tools,
+    input="Where is my order ORD-98712?"
+)
+
+# Step 3: Process the response and handle function calls
+next_input = [item.model_dump() for item in response.output]
+
+for item in response.output:
+    if item.type == "function_call":
+        # Step 4: Parse arguments and execute the function
+        args = json.loads(item.arguments)
+        result = lookup_order(**args)
+
+        # Step 5: Append the function result
+        next_input.append({
+            "type": "function_call_output",
+            "call_id": item.call_id,
+            "output": json.dumps(result)
+        })
+
+# Step 6: Send results back to get the final response
+final_response = client.responses.create(
+    model="anthropic/claude-sonnet-4-6",
+    input=next_input
+)
+
+print(final_response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+// Step 1: Define tools
+const tools = [
+    {
+        type: "function" as const,
+        name: "lookup_order",
+        description: "Look up an order by order ID. Returns order status, items, and shipping info.",
+        parameters: {
+            type: "object",
+            properties: {
+                order_id: {
+                    type: "string",
+                    description: "The unique order identifier, e.g. ORD-12345"
+                }
+            },
+            required: ["order_id"]
+        }
+    }
+];
+
+// Your actual function implementation
+function lookupOrder(orderId: string): Record<string, unknown> {
+    // In production, query your database or order management system
+    return {
+        order_id: orderId,
+        status: "shipped",
+        items: ["Wireless Headphones", "USB-C Cable"],
+        tracking_number: "1Z999AA10123456784",
+        estimated_delivery: "2026-03-02"
+    };
+}
+
+// Step 2: Send the initial request
+const response = await client.responses.create({
+    model: "anthropic/claude-sonnet-4-6",
+    tools: tools,
+    input: "Where is my order ORD-98712?"
+});
+
+// Step 3: Process the response and handle function calls
+const nextInput: any[] = response.output.map(item => ({ ...item }));
+
+for (const item of response.output) {
+    if (item.type === "function_call") {
+        // Step 4: Parse arguments and execute the function
+        const args = JSON.parse(item.arguments);
+        const result = lookupOrder(args.order_id);
+
+        // Step 5: Append the function result
+        nextInput.push({
+            type: "function_call_output",
+            call_id: item.call_id,
+            output: JSON.stringify(result)
+        });
+    }
+}
+
+// Step 6: Send results back to get the final response
+const finalResponse = await client.responses.create({
+    model: "anthropic/claude-sonnet-4-6",
+    input: nextInput
+});
+
+console.log(finalResponse.output_text);
+```
+</CodeGroup>
+
+<Tip>
+Always use `json.loads()` (Python) or `JSON.parse()` (TypeScript) on the `arguments` field. It is a JSON string, not a parsed object.
+</Tip>
+
+## Multi-Function Orchestration
+
+When you provide multiple tools, the model decides which to call and in what order. This example registers three functions that work together to answer a complex query.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+import json
+
+client = Perplexity()
+
+# Define multiple tools
+tools = [
+    {
+        "type": "function",
+        "name": "get_weather",
+        "description": "Get the current weather forecast for a city. Returns temperature, conditions, and precipitation chance.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "City name"}
+            },
+            "required": ["city"]
+        }
+    },
+    {
+        "type": "function",
+        "name": "get_calendar_events",
+        "description": "Retrieve today's calendar events for a user. Returns a list of events with times and locations.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "user_id": {"type": "string", "description": "The user ID"},
+                "date": {"type": "string", "description": "Date in YYYY-MM-DD format"}
+            },
+            "required": ["user_id", "date"]
+        }
+    },
+    {
+        "type": "function",
+        "name": "send_email",
+        "description": "Send an email to a recipient with a subject and body.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "to": {"type": "string", "description": "Recipient email address"},
+                "subject": {"type": "string", "description": "Email subject line"},
+                "body": {"type": "string", "description": "Email body text"}
+            },
+            "required": ["to", "subject", "body"]
+        }
+    }
+]
+
+# Function implementations
+def get_weather(city: str) -> dict:
+    return {"city": city, "temp_f": 72, "conditions": "Partly cloudy", "precipitation_chance": 0.15}
+
+def get_calendar_events(user_id: str, date: str) -> dict:
+    return {
+        "events": [
+            {"time": "09:00", "title": "Team standup", "location": "Conference Room B"},
+            {"time": "12:00", "title": "Lunch with client", "location": "Riverside Park (outdoor)"},
+            {"time": "15:00", "title": "Sprint review", "location": "Zoom"}
+        ]
+    }
+
+def send_email(to: str, subject: str, body: str) -> dict:
+    # In production, integrate with your email service
+    return {"status": "sent", "message_id": "msg-20260226-001"}
+
+# Map function names to implementations
+function_map = {
+    "get_weather": get_weather,
+    "get_calendar_events": get_calendar_events,
+    "send_email": send_email,
+}
+
+# Multi-turn loop: keep sending requests until no more function calls
+input_messages = [
+    {"role": "user", "content": (
+        "I'm user U-100 in San Francisco. What's my schedule today (2026-02-26) "
+        "and is the weather good for my outdoor events? "
+        "If there's rain risk, email me at alice@example.com with a reminder to bring an umbrella."
+    )}
+]
+
+response = client.responses.create(
+    model="anthropic/claude-sonnet-4-6",
+    tools=tools,
+    input=input_messages
+)
+
+# Loop until the model produces a final text response with no pending function calls
+while any(item.type == "function_call" for item in response.output):
+    next_input = [item.model_dump() for item in response.output]
+
+    for item in response.output:
+        if item.type == "function_call":
+            args = json.loads(item.arguments)
+            fn = function_map[item.name]
+            result = fn(**args)
+
+            next_input.append({
+                "type": "function_call_output",
+                "call_id": item.call_id,
+                "output": json.dumps(result)
+            })
+
+    response = client.responses.create(
+        model="anthropic/claude-sonnet-4-6",
+        tools=tools,
+        input=next_input
+    )
+
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+// Define multiple tools
+const tools = [
+    {
+        type: "function" as const,
+        name: "get_weather",
+        description: "Get the current weather forecast for a city. Returns temperature, conditions, and precipitation chance.",
+        parameters: {
+            type: "object",
+            properties: {
+                city: { type: "string", description: "City name" }
+            },
+            required: ["city"]
+        }
+    },
+    {
+        type: "function" as const,
+        name: "get_calendar_events",
+        description: "Retrieve today's calendar events for a user. Returns a list of events with times and locations.",
+        parameters: {
+            type: "object",
+            properties: {
+                user_id: { type: "string", description: "The user ID" },
+                date: { type: "string", description: "Date in YYYY-MM-DD format" }
+            },
+            required: ["user_id", "date"]
+        }
+    },
+    {
+        type: "function" as const,
+        name: "send_email",
+        description: "Send an email to a recipient with a subject and body.",
+        parameters: {
+            type: "object",
+            properties: {
+                to: { type: "string", description: "Recipient email address" },
+                subject: { type: "string", description: "Email subject line" },
+                body: { type: "string", description: "Email body text" }
+            },
+            required: ["to", "subject", "body"]
+        }
+    }
+];
+
+// Function implementations
+function getWeather(city: string) {
+    return { city, temp_f: 72, conditions: "Partly cloudy", precipitation_chance: 0.15 };
+}
+
+function getCalendarEvents(userId: string, date: string) {
+    return {
+        events: [
+            { time: "09:00", title: "Team standup", location: "Conference Room B" },
+            { time: "12:00", title: "Lunch with client", location: "Riverside Park (outdoor)" },
+            { time: "15:00", title: "Sprint review", location: "Zoom" }
+        ]
+    };
+}
+
+function sendEmail(to: string, subject: string, body: string) {
+    return { status: "sent", message_id: "msg-20260226-001" };
+}
+
+// Map function names to implementations
+const functionMap: Record<string, (...args: any[]) => any> = {
+    get_weather: (args: any) => getWeather(args.city),
+    get_calendar_events: (args: any) => getCalendarEvents(args.user_id, args.date),
+    send_email: (args: any) => sendEmail(args.to, args.subject, args.body),
+};
+
+// Multi-turn loop
+let response = await client.responses.create({
+    model: "anthropic/claude-sonnet-4-6",
+    tools: tools,
+    input: [
+        {
+            role: "user",
+            content:
+                "I'm user U-100 in San Francisco. What's my schedule today (2026-02-26) " +
+                "and is the weather good for my outdoor events? " +
+                "If there's rain risk, email me at alice@example.com with a reminder to bring an umbrella."
+        }
+    ]
+});
+
+while (response.output.some(item => item.type === "function_call")) {
+    const nextInput: any[] = response.output.map(item => ({ ...item }));
+
+    for (const item of response.output) {
+        if (item.type === "function_call") {
+            const args = JSON.parse(item.arguments);
+            const result = functionMap[item.name](args);
+
+            nextInput.push({
+                type: "function_call_output",
+                call_id: item.call_id,
+                output: JSON.stringify(result)
+            });
+        }
+    }
+
+    response = await client.responses.create({
+        model: "anthropic/claude-sonnet-4-6",
+        tools: tools,
+        input: nextInput
+    });
+}
+
+console.log(response.output_text);
+```
+</CodeGroup>
+
+<Info>
+The model may call functions across multiple turns. The `while` loop above keeps running until the model finishes all function calls and produces a final text response. In some turns the model may call one function, and in the next turn call another based on the results it received.
+</Info>
+
+## Combining Custom Functions with `web_search`
+
+You can mix built-in tools like `web_search` and `fetch_url` with your own custom functions in the same `tools` array. The model decides autonomously which tool to use. This is powerful for workflows that need live web data combined with actions in your own systems.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+import json
+
+client = Perplexity()
+
+tools = [
+    # Built-in web search
+    {"type": "web_search"},
+    # Custom function to persist data
+    {
+        "type": "function",
+        "name": "save_to_db",
+        "description": "Save a research summary to the internal database. Call this after gathering information to persist findings.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "topic": {"type": "string", "description": "The research topic"},
+                "summary": {"type": "string", "description": "A concise summary of the findings"},
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of source URLs"
+                }
+            },
+            "required": ["topic", "summary", "sources"]
+        }
+    }
+]
+
+def save_to_db(topic: str, summary: str, sources: list) -> dict:
+    # In production, write to your database
+    record_id = "rec-" + topic.lower().replace(" ", "-")[:20]
+    print(f"Saved to DB: {record_id}")
+    return {"record_id": record_id, "status": "saved"}
+
+response = client.responses.create(
+    model="anthropic/claude-sonnet-4-6",
+    tools=tools,
+    input="Research the latest developments in solid-state batteries, then save your findings to our database.",
+    instructions="First search the web for current information, then use save_to_db to persist your summary."
+)
+
+# The model will use web_search automatically (no function_call for built-in tools),
+# then call save_to_db which we need to handle.
+while any(item.type == "function_call" for item in response.output):
+    next_input = [item.model_dump() for item in response.output]
+
+    for item in response.output:
+        if item.type == "function_call":
+            args = json.loads(item.arguments)
+            result = save_to_db(**args)
+            next_input.append({
+                "type": "function_call_output",
+                "call_id": item.call_id,
+                "output": json.dumps(result)
+            })
+
+    response = client.responses.create(
+        model="anthropic/claude-sonnet-4-6",
+        tools=tools,
+        input=next_input
+    )
+
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const tools = [
+    // Built-in web search
+    { type: "web_search" as const },
+    // Custom function to persist data
+    {
+        type: "function" as const,
+        name: "save_to_db",
+        description: "Save a research summary to the internal database. Call this after gathering information to persist findings.",
+        parameters: {
+            type: "object",
+            properties: {
+                topic: { type: "string", description: "The research topic" },
+                summary: { type: "string", description: "A concise summary of the findings" },
+                sources: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "List of source URLs"
+                }
+            },
+            required: ["topic", "summary", "sources"]
+        }
+    }
+];
+
+function saveToDb(topic: string, summary: string, sources: string[]) {
+    const recordId = "rec-" + topic.toLowerCase().replace(/ /g, "-").slice(0, 20);
+    console.log(`Saved to DB: ${recordId}`);
+    return { record_id: recordId, status: "saved" };
+}
+
+let response = await client.responses.create({
+    model: "anthropic/claude-sonnet-4-6",
+    tools: tools,
+    input: "Research the latest developments in solid-state batteries, then save your findings to our database.",
+    instructions: "First search the web for current information, then use save_to_db to persist your summary."
+});
+
+while (response.output.some(item => item.type === "function_call")) {
+    const nextInput: any[] = response.output.map(item => ({ ...item }));
+
+    for (const item of response.output) {
+        if (item.type === "function_call") {
+            const args = JSON.parse(item.arguments);
+            const result = saveToDb(args.topic, args.summary, args.sources);
+            nextInput.push({
+                type: "function_call_output",
+                call_id: item.call_id,
+                output: JSON.stringify(result)
+            });
+        }
+    }
+
+    response = await client.responses.create({
+        model: "anthropic/claude-sonnet-4-6",
+        tools: tools,
+        input: nextInput
+    });
+}
+
+console.log(response.output_text);
+```
+</CodeGroup>
+
+<Tip>
+Built-in tools like `web_search` are executed server-side by the API. You only need to handle `function_call` items for your custom functions. The model seamlessly interleaves built-in and custom tool usage.
+</Tip>
+
+## Error Handling Patterns
+
+When a function call fails, return a structured error in the `function_call_output` so the model can adapt its response. Never silently swallow errors; the model can often recover or inform the user gracefully.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+import json
+import traceback
+
+client = Perplexity()
+
+def execute_function(name: str, args: dict) -> dict:
+    """Dispatch and execute a function call with error handling."""
+    function_map = {
+        "lookup_order": lookup_order,
+        "cancel_order": cancel_order,
+    }
+
+    if name not in function_map:
+        return {"error": True, "message": f"Unknown function: {name}"}
+
+    try:
+        result = function_map[name](**args)
+        return result
+    except KeyError as e:
+        return {"error": True, "message": f"Missing required field: {e}"}
+    except TimeoutError:
+        return {"error": True, "message": "The request timed out. Please try again."}
+    except Exception as e:
+        return {"error": True, "message": f"Function failed: {str(e)}"}
+
+
+def lookup_order(order_id: str) -> dict:
+    if not order_id.startswith("ORD-"):
+        raise ValueError(f"Invalid order ID format: {order_id}")
+    return {"order_id": order_id, "status": "delivered"}
+
+
+def cancel_order(order_id: str) -> dict:
+    # Simulate a failure
+    raise ConnectionError("Order service is temporarily unavailable")
+
+
+def run_agent(user_input: str, tools: list) -> str:
+    """Run the full function calling loop with error handling."""
+    response = client.responses.create(
+        model="anthropic/claude-sonnet-4-6",
+        tools=tools,
+        input=user_input
+    )
+
+    max_turns = 10
+    turn = 0
+
+    while any(item.type == "function_call" for item in response.output) and turn < max_turns:
+        next_input = [item.model_dump() for item in response.output]
+
+        for item in response.output:
+            if item.type == "function_call":
+                args = json.loads(item.arguments)
+                result = execute_function(item.name, args)
+
+                next_input.append({
+                    "type": "function_call_output",
+                    "call_id": item.call_id,
+                    "output": json.dumps(result)
+                })
+
+        response = client.responses.create(
+            model="anthropic/claude-sonnet-4-6",
+            tools=tools,
+            input=next_input
+        )
+        turn += 1
+
+    if turn >= max_turns:
+        return "Error: Maximum function call turns exceeded."
+
+    return response.output_text
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+function lookupOrder(orderId: string): Record<string, unknown> {
+    if (!orderId.startsWith("ORD-")) {
+        throw new Error(`Invalid order ID format: ${orderId}`);
+    }
+    return { order_id: orderId, status: "delivered" };
+}
+
+function cancelOrder(orderId: string): Record<string, unknown> {
+    // Simulate a failure
+    throw new Error("Order service is temporarily unavailable");
+}
+
+function executeFunction(name: string, args: Record<string, any>): Record<string, unknown> {
+    const functionMap: Record<string, (args: any) => Record<string, unknown>> = {
+        lookup_order: (a) => lookupOrder(a.order_id),
+        cancel_order: (a) => cancelOrder(a.order_id),
+    };
+
+    if (!(name in functionMap)) {
+        return { error: true, message: `Unknown function: ${name}` };
+    }
+
+    try {
+        return functionMap[name](args);
+    } catch (e: any) {
+        return { error: true, message: `Function failed: ${e.message}` };
+    }
+}
+
+async function runAgent(userInput: string, tools: any[]): Promise<string> {
+    let response = await client.responses.create({
+        model: "anthropic/claude-sonnet-4-6",
+        tools: tools,
+        input: userInput
+    });
+
+    const maxTurns = 10;
+    let turn = 0;
+
+    while (response.output.some(item => item.type === "function_call") && turn < maxTurns) {
+        const nextInput: any[] = response.output.map(item => ({ ...item }));
+
+        for (const item of response.output) {
+            if (item.type === "function_call") {
+                const args = JSON.parse(item.arguments);
+                const result = executeFunction(item.name, args);
+
+                nextInput.push({
+                    type: "function_call_output",
+                    call_id: item.call_id,
+                    output: JSON.stringify(result)
+                });
+            }
+        }
+
+        response = await client.responses.create({
+            model: "anthropic/claude-sonnet-4-6",
+            tools: tools,
+            input: nextInput
+        });
+        turn++;
+    }
+
+    if (turn >= maxTurns) {
+        return "Error: Maximum function call turns exceeded.";
+    }
+
+    return response.output_text;
+}
+```
+</CodeGroup>
+
+Key principles for error handling:
+
+- **Return errors as structured data**, not exceptions. Include `"error": true` and a human-readable `"message"` so the model can relay the issue to the user.
+- **Catch specific exceptions** (timeouts, auth failures, validation errors) and map them to clear messages.
+- **Cap the number of turns** to prevent infinite loops.
+- **Never return raw stack traces** to the model. They waste tokens and may leak internal details.
+
+## Parallel Function Calls
+
+When the model determines that multiple function calls are independent, it may return several `function_call` items in a single response. Process all of them before sending results back in one batch.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+client = Perplexity()
+
+tools = [
+    {
+        "type": "function",
+        "name": "get_stock_price",
+        "description": "Get the current stock price for a ticker symbol.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol, e.g. AAPL"}
+            },
+            "required": ["ticker"]
+        }
+    },
+    {
+        "type": "function",
+        "name": "get_company_info",
+        "description": "Get basic company information for a ticker symbol.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticker": {"type": "string", "description": "Stock ticker symbol"}
+            },
+            "required": ["ticker"]
+        }
+    }
+]
+
+def get_stock_price(ticker: str) -> dict:
+    prices = {"AAPL": 245.12, "GOOGL": 192.45, "TSLA": 371.80}
+    return {"ticker": ticker, "price": prices.get(ticker, 0.0), "currency": "USD"}
+
+def get_company_info(ticker: str) -> dict:
+    info = {
+        "AAPL": {"name": "Apple Inc.", "sector": "Technology", "market_cap": "3.7T"},
+        "GOOGL": {"name": "Alphabet Inc.", "sector": "Technology", "market_cap": "2.4T"},
+    }
+    return info.get(ticker, {"name": "Unknown", "sector": "Unknown", "market_cap": "N/A"})
+
+function_map = {
+    "get_stock_price": get_stock_price,
+    "get_company_info": get_company_info,
+}
+
+response = client.responses.create(
+    model="anthropic/claude-sonnet-4-6",
+    tools=tools,
+    input="Compare the current stock prices and company details for AAPL and GOOGL."
+)
+
+while any(item.type == "function_call" for item in response.output):
+    # Collect all pending function calls
+    pending_calls = [item for item in response.output if item.type == "function_call"]
+    next_input = [item.model_dump() for item in response.output]
+
+    # Execute all function calls in parallel
+    def run_call(item):
+        args = json.loads(item.arguments)
+        result = function_map[item.name](**args)
+        return {
+            "type": "function_call_output",
+            "call_id": item.call_id,
+            "output": json.dumps(result)
+        }
+
+    with ThreadPoolExecutor(max_workers=len(pending_calls)) as executor:
+        results = list(executor.map(run_call, pending_calls))
+
+    next_input.extend(results)
+
+    response = client.responses.create(
+        model="anthropic/claude-sonnet-4-6",
+        tools=tools,
+        input=next_input
+    )
+
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const tools = [
+    {
+        type: "function" as const,
+        name: "get_stock_price",
+        description: "Get the current stock price for a ticker symbol.",
+        parameters: {
+            type: "object",
+            properties: {
+                ticker: { type: "string", description: "Stock ticker symbol, e.g. AAPL" }
+            },
+            required: ["ticker"]
+        }
+    },
+    {
+        type: "function" as const,
+        name: "get_company_info",
+        description: "Get basic company information for a ticker symbol.",
+        parameters: {
+            type: "object",
+            properties: {
+                ticker: { type: "string", description: "Stock ticker symbol" }
+            },
+            required: ["ticker"]
+        }
+    }
+];
+
+function getStockPrice(ticker: string) {
+    const prices: Record<string, number> = { AAPL: 245.12, GOOGL: 192.45, TSLA: 371.80 };
+    return { ticker, price: prices[ticker] ?? 0.0, currency: "USD" };
+}
+
+function getCompanyInfo(ticker: string) {
+    const info: Record<string, any> = {
+        AAPL: { name: "Apple Inc.", sector: "Technology", market_cap: "3.7T" },
+        GOOGL: { name: "Alphabet Inc.", sector: "Technology", market_cap: "2.4T" },
+    };
+    return info[ticker] ?? { name: "Unknown", sector: "Unknown", market_cap: "N/A" };
+}
+
+const functionMap: Record<string, (args: any) => any> = {
+    get_stock_price: (args) => getStockPrice(args.ticker),
+    get_company_info: (args) => getCompanyInfo(args.ticker),
+};
+
+let response = await client.responses.create({
+    model: "anthropic/claude-sonnet-4-6",
+    tools: tools,
+    input: "Compare the current stock prices and company details for AAPL and GOOGL."
+});
+
+while (response.output.some(item => item.type === "function_call")) {
+    const pendingCalls = response.output.filter(item => item.type === "function_call");
+    const nextInput: any[] = response.output.map(item => ({ ...item }));
+
+    // Execute all function calls in parallel
+    const results = await Promise.all(
+        pendingCalls.map(async (item) => {
+            const args = JSON.parse(item.arguments);
+            const result = functionMap[item.name](args);
+            return {
+                type: "function_call_output",
+                call_id: item.call_id,
+                output: JSON.stringify(result)
+            };
+        })
+    );
+
+    nextInput.push(...results);
+
+    response = await client.responses.create({
+        model: "anthropic/claude-sonnet-4-6",
+        tools: tools,
+        input: nextInput
+    });
+}
+
+console.log(response.output_text);
+```
+</CodeGroup>
+
+<Info>
+The model may emit multiple `function_call` items in a single response when it determines the calls are independent. Using `ThreadPoolExecutor` (Python) or `Promise.all` (TypeScript) lets you execute them concurrently, reducing total latency.
+</Info>
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Agent API Reference" icon="settings-bolt" href="/api-reference/agent-post">
+Review request parameters and tool schema fields.
+</Card>
+
+<Card title="Agent API Models" icon="brain" href="/docs/agent-api/models">
+Choose a model for your function-calling workload.
+</Card>
+
+<Card title="Agent API Quickstart" icon="rocket" href="/docs/agent-api/quickstart">
+Get up and running with the Agent API in minutes.
+</Card>
+
+<Card title="Output Control" icon="adjustments" href="/docs/agent-api/output-control">
+Combine function calling with structured outputs and response shaping.
+</Card>
+</CardGroup>
