@@ -1,0 +1,308 @@
+---
+title: Model Picker
+description: Describe a task and get a grounded shortlist of open models to use. One Agent API request combines the Hugging Face MCP server with web search to find, verify, and recommend a model.
+sidebar_position: 19
+keywords: [agent-api, mcp, model-context-protocol, hugging-face, web-search, tool-use, model-selection, open-models]
+products: [agent-api]
+categories: [mcp, integrations]
+---
+
+# Model Picker
+
+A command-line example that turns a plain-language task into a shortlist of open models, with one recommendation and the evidence behind it.
+You describe what you need - `"on-device English speech-to-text, small enough to run on a laptop"` - and the model returns a table of real Hugging Face repos plus a pick you can defend.
+
+It does this with one Agent API request that combines two tools.
+The [`mcp`](/docs/agent-api/tools/mcp) tool connects the model to the [Hugging Face MCP server](https://huggingface.co/settings/mcp), so it can search the live model registry and read each repo's real metadata.
+The [`web_search`](/docs/agent-api/tools/web-search) tool lets it check benchmarks, quality, and known issues in the same run.
+The Hub says which models exist and how they are adopted and licensed; the web says whether they are any good.
+Neither tool alone is enough.
+
+## What MCP does here
+
+- **Gives the model live registry facts.** The `mcp` tool lets it call `hub_repo_search` and `hub_repo_details` to pull the models that exist right now, with their real download counts, licenses, and last-modified dates.
+- **No integration code on your side.** Agent API discovers the server's tools when the request starts and calls them like native tools. You point the `mcp` tool at the server URL - there is no Hugging Face SDK to install, no endpoints to wrap, no schema to maintain.
+- **Read-only by design.** The example allow-lists the Hub's read tools (`hub_repo_search`, `hub_repo_details`, `paper_search`, `hf_doc_search`, `hf_doc_fetch`) with `allowed_tools`, so the model can look up models but nothing else.
+
+## Without MCP
+
+Ask a plain chat model to pick a model and it answers from training data: it names repos it remembers, guesses at download counts, and cannot tell you what shipped last month or whether a license changed.
+The alternative is to do it by hand: query the Hugging Face API for candidates, then fetch, rank, and cross-check each one against the web yourself.
+The `mcp` tool and `web_search` do that whole job inside the one request above.
+
+## Installation
+
+Keep `model_picker.py` and `requirements.txt` in the same directory.
+
+1. Install the [Perplexity Python SDK](https://github.com/ppl-ai/perplexity-python), pinned in `requirements.txt`:
+
+```text requirements.txt
+perplexityai==0.39.0
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Set your Perplexity API key:
+
+```bash
+export PERPLEXITY_API_KEY="your-api-key-here"
+```
+
+The SDK reads the key from this environment variable.
+The Hugging Face MCP server (`https://huggingface.co/mcp`) needs no key - the example connects to it anonymously.
+
+3. (Optional) Raise the Hugging Face rate limit. Anonymous access to the MCP server is rate-limited. For heavier use, create a [Hugging Face token](https://huggingface.co/settings/tokens) (a read token is enough) and export it as `HF_TOKEN`:
+
+```bash
+export HF_TOKEN="hf_..."
+```
+
+When set, the script passes it to the server in the `mcp` tool's `authorization` field. Leave it unset to run anonymously.
+
+<Note>
+This example uses the Agent API `mcp` tool. See the [MCP docs](/docs/agent-api/tools/mcp) for setup and usage details.
+</Note>
+
+## Usage
+
+Pass the task as a single argument:
+
+```bash
+python model_picker.py "on-device English speech-to-text, small enough to run on a laptop"
+```
+
+The script prints a Markdown brief: a shortlist table and one recommendation with citations.
+Add `--show-tools` to also print the tool calls the model made, in order, so you can see the Hub lookups and the web searches that produced the answer.
+
+## How it works
+
+The whole run is a single `client.responses.create` call given two tools - the Hugging Face `mcp` server and `web_search` - and one instruction: ground every claim in the tools.
+
+That instruction is the point of the example.
+Without it, the model treats the tools as optional and skips them.
+The system prompt closes that door: it makes the model verify each candidate against the Hub and the web before it recommends anything.
+
+In practice, the run has two phases.
+First, the model narrows the field on the Hub, refining its search several times and then reading the repo details of the finalists.
+Then it switches to the web to check how good those finalists actually are, and only then writes the shortlist and its pick.
+
+<Accordion title="See the tool calls (--show-tools)">
+In the trace, Hugging Face MCP calls appear as `mcp:<tool>`; the Agent API's web searches appear as `web_search` with the queries it ran.
+On the run below, the model searched the Hub seven times, read the finalists' details once, then ran a round of web search before answering - Hub first, web second.
+
+```text
+1. mcp:hub_repo_search {"filters":["automatic-speech-recognition"],"query":"English speech to text on device small whisper","sort":"downloads"}
+2. mcp:hub_repo_search {"author":"openai","filters":["automatic-speech-recognition"],"query":"whisper"}
+   ... (searches 3-7: distil-whisper, wav2vec2, faster-whisper, facebook/wav2vec2-base-960h, nvidia parakeet) ...
+8. mcp:hub_repo_details {"repo_ids":["openai/whisper-base.en","openai/whisper-small.en","distil-whisper/distil-small.en","distil-whisper/distil-medium.en","facebook/wav2vec2-base-960h"], ...}
+9. web_search openai whisper base.en small.en benchmarks known issues; distil-whisper distil-small.en distil-medium.en benchmarks; facebook wav2vec2-base-960h benchmarks
+```
+
+The model writes these queries itself and refines them between calls, so the exact shape varies from run to run.
+</Accordion>
+
+## Full code
+
+The script is one file: build the two tools, submit one background request, poll until it finishes, and print the answer (plus an optional tool trace).
+
+<Accordion title="Full code - model_picker.py">
+```python model_picker.py
+#!/usr/bin/env python3
+"""Model Picker - turn a plain-language task into a grounded shortlist of open
+models, using one Agent API request that combines the Hugging Face MCP server
+with web search. See the README for details.
+"""
+
+import argparse
+import os
+import sys
+import time
+from typing import Any, List
+
+from perplexity import Perplexity
+
+POLL_INTERVAL_SECONDS = 4
+POLL_TIMEOUT_SECONDS = 600
+MAX_STEPS = 20
+MODEL = "openai/gpt-5.5"
+HF_MCP_URL = "https://huggingface.co/mcp"
+
+# Read-only subset of the server's tools, so the model can look up models but nothing else.
+HF_ALLOWED_TOOLS = [
+    "hub_repo_search",
+    "hub_repo_details",
+    "paper_search",
+    "hf_doc_search",
+    "hf_doc_fetch",
+]
+
+# Force the model to verify against the tools instead of answering from memory.
+INSTRUCTIONS = """You recommend open models from Hugging Face for a user's task.
+
+Ground every claim in tools - never recommend a model from memory:
+- Find candidates with hub_repo_search. If a search returns weak or empty
+  results, refine it (change the query wording, task filter, or sort) and
+  search again before giving up.
+- For each finalist, call hub_repo_details to confirm its real task, license,
+  download count, and last-modified date. Drop candidates you cannot verify.
+- Use web_search to check each finalist's benchmarks, quality, and any known
+  issues or deprecations. Always run at least one web_search before you
+  recommend.
+
+Then answer in Markdown:
+1. A shortlist table with columns: Model | Downloads | License | Hugging Face link.
+2. One recommendation with a short justification tied to the task's
+   constraints, citing the Hub links and the web sources you used.
+Prefer models with a clear open license and real adoption over obscure repos."""
+
+PROMPT_TEMPLATE = """Recommend an open model for this task:
+
+{task}
+
+Search Hugging Face for candidates, verify each with its repo details, and
+check the web for benchmarks and known issues before recommending one."""
+
+
+def build_tools() -> List[dict]:
+    mcp_tool = {
+        "type": "mcp",
+        "server_label": "huggingface",
+        "server_url": HF_MCP_URL,
+        "allowed_tools": HF_ALLOWED_TOOLS,
+    }
+    # Optional: set HF_TOKEN to authenticate and raise the anonymous rate limit.
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        mcp_tool["authorization"] = token
+    return [mcp_tool, {"type": "web_search"}]
+
+
+def submit_and_wait(client: Perplexity, **create_kwargs: Any) -> Any:
+    response = client.responses.create(background=True, **create_kwargs)
+    print(f"Submitted response {response.id}; working...", file=sys.stderr)
+    deadline = time.time() + POLL_TIMEOUT_SECONDS
+    while response.status in ("queued", "in_progress"):
+        if time.time() > deadline:
+            raise TimeoutError("Timed out waiting for the response to finish.")
+        time.sleep(POLL_INTERVAL_SECONDS)
+        response = client.responses.retrieve(response.id)
+    if response.status != "completed":
+        raise RuntimeError(f"Request ended with status {response.status!r}.")
+    return response
+
+
+def final_text(response: Any) -> str:
+    # Built by hand: response.output_text raises when a message block has no text.
+    chunks: List[str] = []
+    for item in response.output or []:
+        if getattr(item, "type", None) != "message":
+            continue
+        for block in getattr(item, "content", None) or []:
+            if getattr(block, "type", None) == "output_text" and block.text:
+                chunks.append(block.text)
+    return "\n\n".join(chunks)
+
+
+def print_tool_trace(response: Any) -> None:
+    # MCP calls arrive as mcp_call items; web searches as search_results items.
+    print("--- tool trace ---", file=sys.stderr)
+    n = 0
+    for item in response.output or []:
+        kind = getattr(item, "type", None)
+        if kind == "mcp_call":
+            n += 1
+            print(f"\n{n}. mcp:{item.name} {(item.arguments or '').strip()[:200]}", file=sys.stderr)
+        elif kind == "search_results":
+            n += 1
+            queries = getattr(item, "queries", None) or []
+            print(f"\n{n}. web_search {'; '.join(queries)}", file=sys.stderr)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Recommend an open model for a task.")
+    parser.add_argument(
+        "task",
+        help='The task in plain language, e.g. "on-device English speech-to-text".',
+    )
+    parser.add_argument(
+        "--show-tools",
+        action="store_true",
+        help="Print the tool calls the model made, in order.",
+    )
+    args = parser.parse_args()
+
+    if not os.environ.get("PERPLEXITY_API_KEY"):
+        print("Set PERPLEXITY_API_KEY in your environment.", file=sys.stderr)
+        return 1
+
+    client = Perplexity()
+    print(f"Finding open models for: {args.task}", file=sys.stderr)
+    try:
+        response = submit_and_wait(
+            client,
+            model=MODEL,
+            instructions=INSTRUCTIONS,
+            input=PROMPT_TEMPLATE.format(task=args.task),
+            tools=build_tools(),
+            max_steps=MAX_STEPS,
+        )
+    except Exception as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 2
+
+    if args.show_tools:
+        print_tool_trace(response)
+    print(final_text(response) or "(no answer returned)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+```
+</Accordion>
+
+## Example Output
+
+A real run - `python model_picker.py "on-device English speech-to-text, small enough to run on a laptop"` (results vary with the live Hub and web):
+
+```markdown
+## Shortlist
+
+| Model | Downloads | License | Hugging Face link |
+|---|---:|---|---|
+| distil-whisper/distil-small.en | 895.7K | MIT | https://hf.co/distil-whisper/distil-small.en |
+| openai/whisper-small.en | 3.7M | Apache-2.0 | https://hf.co/openai/whisper-small.en |
+| openai/whisper-base.en | 20.7M | Apache-2.0 | https://hf.co/openai/whisper-base.en |
+| distil-whisper/distil-medium.en | 6.5M | MIT | https://hf.co/distil-whisper/distil-medium.en |
+| facebook/wav2vec2-base-960h | 113.6M | Apache-2.0 | https://hf.co/facebook/wav2vec2-base-960h |
+
+## Recommendation: distil-whisper/distil-small.en
+
+For on-device English speech-to-text on a laptop, I'd pick distil-whisper/distil-small.en.
+It is verified on the Hub as automatic-speech-recognition, English-only, 166.1M params, MIT
+licensed, and the smallest Distil-Whisper checkpoint - aimed at memory-constrained,
+on-device use, with roughly 6x faster inference while staying close to Whisper quality.
+It is smaller than openai/whisper-small.en (166M vs 242M), and a better accuracy/speed
+tradeoff than whisper-base.en if you can spare the memory. Known caveat: run distilled
+models through Hugging Face Transformers rather than the openai/whisper package, and expect
+accuracy to vary with audio quality and accent.
+```
+
+Every model in the table is one the request actually looked up on the Hub, with download counts and licenses from the repos' real metadata.
+
+## Limitations
+
+- **Live variance.** The shortlist depends on the live Hub and current web results, so the exact models and the recommendation can differ between runs.
+- **Anonymous rate limits.** The example connects to the Hugging Face MCP server anonymously, which is rate-limited. For heavier use, set `HF_TOKEN` (see [Installation](#installation)) to authenticate and raise the limit.
+- **Third-party servers.** Remote MCP servers are third-party services - connect only servers you trust. See [Risks and safety](/docs/agent-api/tools/mcp#risks-and-safety).
+
+## Resources
+
+- [MCP Tool](/docs/agent-api/tools/mcp)
+- [Web Search Tool](/docs/agent-api/tools/web-search)
+- [Hugging Face MCP server](https://huggingface.co/settings/mcp)
+- [Agent API Quickstart](/docs/agent-api/quickstart)
+- [Pricing](/docs/getting-started/pricing)
+- [Perplexity Python SDK](https://github.com/ppl-ai/perplexity-python)

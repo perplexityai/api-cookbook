@@ -1,25 +1,22 @@
 # Contributing to Perplexity API Cookbook
 
-Thank you for your interest in contributing to our API Cookbook! We welcome high-quality examples that showcase the capabilities of Perplexity's Sonar API.
+Thank you for your interest in contributing to our API Cookbook! We welcome high-quality examples that teach developers how to use the Perplexity API Platform.
 
 ## Structure
 
-This cookbook contains three main sections:
+This cookbook contains two main sections:
 
 ### 1. **Examples** (`/docs/examples/`)
 Step-by-step tutorials and example implementations that teach specific concepts or solve common use cases.
 
-### 2. **Showcase** (`/docs/showcase/`)
-Community-built projects that demonstrate real-world applications of the Sonar API.
-
-### 3. **Articles** (`/docs/articles/`)
+### 2. **Articles** (`/docs/articles/`)
 In-depth integration guides and advanced implementation tutorials for complex use cases and integrations with other tools.
 
 ## Contributing Guidelines
 
 ### What We're Looking For
 
-- **Clear, educational content** that helps developers understand how to use the Sonar API effectively
+- **Clear, educational content** that helps developers understand how to use the Agent API, Search API, or Embeddings API effectively
 - **Real-world use cases** that solve actual problems
 - **Well-documented code** with clear explanations
 - **Novel applications** that showcase unique ways to leverage the API
@@ -86,14 +83,6 @@ Any known limitations or considerations users should be aware of.
 4. Include any necessary code snippets in your MDX file
 5. Submit a pull request
 
-### For Showcase Projects
-
-1. Build your project in a separate public repository
-2. Fork this repository
-3. Create a new MDX file under `/docs/showcase/your-project-name.mdx`
-4. Include screenshots or demos if applicable
-5. Submit a pull request
-
 ### For Articles
 
 1. Fork this repository
@@ -113,7 +102,6 @@ Brief description of your contribution
 
 ## Type of Contribution
 - [ ] Example Tutorial
-- [ ] Showcase Project
 - [ ] Article/Integration Guide
 
 ## Checklist
@@ -157,4 +145,4 @@ If you have questions about contributing, please:
 2. Open an issue for discussion before starting major work
 3. Contact us at api@perplexity.ai for specific questions
 
-We look forward to seeing your creative applications of the Perplexity Sonar API!
+We look forward to seeing your creative applications of the Perplexity API Platform!

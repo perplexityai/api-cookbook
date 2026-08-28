@@ -1,0 +1,251 @@
+---
+title: Document Q&A
+description: Load documents and ask questions about them via the Agent API — text extraction, web search enrichment, multi-turn Q&A, and structured output extraction
+sidebar_position: 9
+keywords: [document-qa, text-extraction, agent-api, structured-output, analysis]
+products: [agent-api]
+categories: [structured-outputs, function-calling, memory]
+---
+
+# Document Q&A
+
+Load a document and ask questions about it using the Agent API. This example shows how to read document content, combine it with web search for enriched answers, and build a multi-turn Q&A session over document content.
+
+## Features
+
+- Load documents (text, CSV, JSON, markdown) and pass content to the Agent API
+- Ask questions grounded in the document content
+- Optionally combine with `web_search` for context enrichment
+- Multi-turn conversation to drill into specific sections
+- Structured output extraction from document content
+
+<Info>
+Pass document content directly in the `input` parameter of the Agent API. For text-based formats, read the file and include it in the prompt. Combine with `web_search` for context enrichment beyond the document.
+</Info>
+
+## Installation
+
+```bash
+pip install perplexityai
+```
+
+```bash
+export PERPLEXITY_API_KEY="your_api_key_here"
+```
+
+## Usage
+
+Save the full code below to `doc_qa.py` and run:
+
+```bash
+python doc_qa.py report.txt "What are the key findings in this report?"
+```
+
+For interactive mode:
+
+```bash
+python doc_qa.py report.txt --interactive
+```
+
+## Full Code
+
+<CodeGroup>
+```python Python
+import sys
+import json
+import argparse
+from pathlib import Path
+from perplexity import Perplexity
+
+client = Perplexity()
+
+MAX_CONTENT_CHARS = 50000  # Truncate very large files to stay within token limits
+
+
+def read_document(file_path: str) -> str:
+    """Read a document file and return its text content."""
+    path = Path(file_path)
+    content = path.read_text(errors="replace")
+    if len(content) > MAX_CONTENT_CHARS:
+        content = content[:MAX_CONTENT_CHARS] + "\n\n[... truncated ...]"
+    return content
+
+
+def ask_about_document(
+    file_path: str,
+    question: str,
+    use_web_search: bool = False,
+    conversation_history: list = None,
+) -> dict:
+    """Ask a question about a document's content."""
+    doc_content = read_document(file_path)
+    filename = Path(file_path).name
+
+    # Build the input with document content and question
+    full_input = (
+        f"Document: {filename}\n"
+        f"{'='*60}\n"
+        f"{doc_content}\n"
+        f"{'='*60}\n\n"
+        f"Question: {question}"
+    )
+
+    # Include conversation history for multi-turn
+    if conversation_history:
+        messages = conversation_history + [{"role": "user", "content": full_input}]
+        response = client.responses.create(
+            model="openai/gpt-5.4",
+            input=messages,
+            tools=[{"type": "web_search"}] if use_web_search else [],
+            instructions="Answer questions based on the provided document content. Be specific and cite sections when possible.",
+        )
+    else:
+        response = client.responses.create(
+            model="openai/gpt-5.4",
+            input=full_input,
+            tools=[{"type": "web_search"}] if use_web_search else [],
+            instructions="Answer questions based on the provided document content. Be specific and cite sections when possible.",
+        )
+
+    usage = response.usage
+    return {
+        "answer": response.output_text,
+        "model": response.model,
+        "tokens": {
+            "input": usage.input_tokens if usage else 0,
+            "output": usage.output_tokens if usage else 0,
+        },
+    }
+
+
+def extract_structured_data(file_path: str, schema_name: str, schema: dict) -> dict:
+    """Extract structured data from a document using a JSON schema."""
+    doc_content = read_document(file_path)
+
+    response = client.responses.create(
+        model="openai/gpt-5.4",
+        input=f"Extract the requested structured data from this document:\n\n{doc_content}",
+        response_format={
+            "type": "json_schema",
+            "json_schema": {"name": schema_name, "schema": schema},
+        },
+    )
+
+    return json.loads(response.output_text)
+
+
+def interactive_session(file_path: str, use_web_search: bool = False):
+    """Run an interactive Q&A session over a document."""
+    print(f"Document loaded: {file_path}")
+    print(f"Web search: {'enabled' if use_web_search else 'disabled'}")
+    print("Type 'quit' to exit.\n")
+
+    history = []
+
+    while True:
+        question = input("Question: ").strip()
+        if question.lower() in ("quit", "exit", "q"):
+            break
+        if not question:
+            continue
+
+        result = ask_about_document(file_path, question, use_web_search, history)
+        print(f"\nAnswer:\n{result['answer']}\n")
+        print(f"({result['tokens']['input']}+{result['tokens']['output']} tokens)\n")
+
+        # Add to conversation history for multi-turn
+        history.append({"role": "user", "content": question})
+        history.append({"role": "assistant", "content": result["answer"]})
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Document Q&A")
+    parser.add_argument("file", help="Path to the document file")
+    parser.add_argument("question", nargs="?", help="Question to ask")
+    parser.add_argument("--interactive", action="store_true", help="Interactive mode")
+    parser.add_argument("--web-search", action="store_true", help="Enable web search")
+    args = parser.parse_args()
+
+    if not Path(args.file).exists():
+        print(f"Error: File not found: {args.file}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.interactive:
+        interactive_session(args.file, args.web_search)
+    elif args.question:
+        result = ask_about_document(args.file, args.question, args.web_search)
+        print(result["answer"])
+    else:
+        print("Error: Provide a question or use --interactive.", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
+```
+</CodeGroup>
+
+## Example Output
+
+```bash
+python doc_qa.py quarterly_report.txt "What was the total revenue for Q3?"
+```
+
+```
+Based on the quarterly report, total revenue for Q3 was $4.2 billion,
+representing a 15% year-over-year increase. The report attributes this
+growth primarily to the cloud services division, which grew 28% compared
+to the same period last year (see Section 3, Financial Highlights).
+```
+
+With web search enrichment:
+
+```bash
+python doc_qa.py quarterly_report.txt "How does this compare to industry benchmarks?" --web-search
+```
+
+```
+According to the report, Q3 revenue was $4.2 billion (from document).
+For comparison, the industry average revenue growth for cloud-focused
+companies in Q3 2025 was approximately 12% year-over-year (from web
+search: Bloomberg industry analysis). This places the company above
+the industry benchmark by roughly 3 percentage points.
+```
+
+## Structured Data Extraction from Documents
+
+Extract specific fields from a document into a typed JSON structure:
+
+```python
+# Extract key metrics from a financial report
+schema = {
+    "type": "object",
+    "properties": {
+        "company_name": {"type": "string"},
+        "quarter": {"type": "string"},
+        "total_revenue": {"type": "string"},
+        "net_income": {"type": "string"},
+        "revenue_growth_yoy": {"type": "string"},
+        "key_highlights": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["company_name", "quarter", "total_revenue", "net_income", "revenue_growth_yoy", "key_highlights"],
+    "additionalProperties": false,
+}
+
+data = extract_structured_data("quarterly_report.txt", "financial_summary", schema)
+print(json.dumps(data, indent=2))
+```
+
+<Tip>
+Combine document content with structured outputs to build reliable document processing pipelines. The JSON schema ensures consistent output regardless of document format variations.
+</Tip>
+
+<Warning>
+Very large documents are truncated to stay within token limits. For large files, consider splitting into sections and processing each separately.
+</Warning>
+
+## Limitations
+
+- Very large documents are truncated. The default limit is 50,000 characters (~12,500 tokens).
+- Text-based formats (.txt, .csv, .md, .json) work best. For PDFs, use a library like `pdfplumber` or `PyPDF2` to extract text first.
+- Conversation history for multi-turn sessions does not re-read the file — the document content is included in the first message.

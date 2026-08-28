@@ -1,0 +1,3 @@
+perplexityai==0.38.0
+PyYAML==6.0.2
+pydantic==2.13.4

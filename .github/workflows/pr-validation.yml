@@ -12,30 +12,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
-        uses: actions/checkout@v6
-        
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
-          
+
       - name: MDX validation dependencies
-        run: npm install --save-dev @mdx-js/mdx @mdx-js/loader glob
-        
+        run: npm ci
+
       - name: Validate MDX files
         run: node scripts/validate-mdx.js
-          
+
       - name: Check for broken links
         run: |
-          # Simple check for common broken link patterns
-          echo "Checking for potential broken links..."
-          if grep -r "http://localhost\|http://127.0.0.1" docs/ --exclude-dir=showcase; then
-            echo "❌ Found localhost links that should be removed"
+          echo "Checking for localhost Markdown links..."
+          if grep -rE '\]\(http://(localhost|127\.0\.0\.1)' docs/; then
+            echo "❌ Found localhost Markdown links that should be removed"
             exit 1
           fi
-          echo "✅ No obvious broken links found"
-          
+          echo "✅ No localhost Markdown links found"
+
       - name: Validate frontmatter
         run: |
           # Check that all MDX files have required frontmatter
@@ -45,4 +44,4 @@ jobs:
               exit 1
             fi
             echo "✅ $file - Has frontmatter"
-          done 
+          done

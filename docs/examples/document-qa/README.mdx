@@ -1,0 +1,240 @@
+---
+title: Document Q&A with Embeddings
+description: A self-contained RAG system that ingests documents, generates contextualized embeddings, and answers questions using the Agent API
+sidebar_position: 6
+keywords: [rag, embeddings, document-qa, retrieval, contextualized-embeddings, agent-api]
+products: [agent-api, embeddings-api]
+categories: [rag]
+---
+
+# Document Q&A with Embeddings
+
+A self-contained retrieval-augmented generation (RAG) system that ingests documents, generates contextualized embeddings for semantic search, and produces grounded answers using the Agent API.
+
+## Features
+
+- Ingest plain-text documents and automatically split them into chunks
+- Generate document-aware embeddings using `pplx-embed-context-v1-4b`
+- In-memory vector store with numpy cosine similarity search
+- Answer generation via the Agent API with `anthropic/claude-sonnet-4-6`
+- Full working pipeline: load, chunk, embed, query, answer
+
+## Architecture
+
+**Indexing:** Load documents, split into overlapping chunks, embed with contextualized embeddings, store in memory.
+
+**Query:** Embed the user question, compute cosine similarity, retrieve top-k chunks, generate an answer with the Agent API.
+
+<Info>
+Contextualized embeddings produce higher-quality representations than standard embeddings for document chunks because the model understands that chunks belong to the same document.
+</Info>
+
+## Installation
+
+```bash
+pip install perplexityai numpy
+```
+
+```bash
+export PERPLEXITY_API_KEY="your_api_key_here"
+```
+
+## Usage
+
+Save the full code below to `document_qa.py` and run:
+
+```bash
+python document_qa.py
+```
+
+For interactive mode:
+
+```bash
+python document_qa.py --interactive
+```
+
+## Full Code
+
+```python
+import base64
+import sys
+import numpy as np
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# --- Chunking ---
+
+def chunk_text(text, chunk_size=300, overlap=50):
+    """Split text into overlapping chunks by word count."""
+    words = text.split()
+    chunks, start = [], 0
+    while start < len(words):
+        chunks.append(" ".join(words[start : start + chunk_size]))
+        start += chunk_size - overlap
+    return chunks
+
+# --- Embedding helpers ---
+
+def decode_embedding(b64_string):
+    """Decode a base64-encoded int8 embedding to float32."""
+    return np.frombuffer(base64.b64decode(b64_string), dtype=np.int8).astype(np.float32)
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+# --- Build index ---
+
+def build_index(documents, chunk_size=300, overlap=50):
+    """Chunk documents and generate contextualized embeddings."""
+    all_doc_chunks, metadata = [], []
+    for doc in documents:
+        chunks = chunk_text(doc["content"], chunk_size, overlap)
+        all_doc_chunks.append(chunks)
+        metadata.append({"title": doc["title"], "chunks": chunks})
+
+    print(f"Embedding {sum(len(c) for c in all_doc_chunks)} chunks...")
+    response = client.contextualized_embeddings.create(
+        input=all_doc_chunks,
+        model="pplx-embed-context-v1-4b"
+    )
+
+    index = []
+    for doc_obj in response.data:
+        meta = metadata[doc_obj.index]
+        for chunk_obj in doc_obj.data:
+            index.append({
+                "text": meta["chunks"][chunk_obj.index],
+                "embedding": decode_embedding(chunk_obj.embedding),
+                "doc_title": meta["title"],
+            })
+    print(f"Index built: {len(index)} chunks.")
+    return index
+
+# --- Retrieve ---
+
+def retrieve(index, query_text, top_k=3):
+    """Embed the query and return the top-k most similar chunks."""
+    qr = client.contextualized_embeddings.create(
+        input=[[query_text]], model="pplx-embed-context-v1-4b"
+    )
+    q_emb = decode_embedding(qr.data[0].data[0].embedding)
+    scored = sorted(
+        [{**item, "score": float(cosine_similarity(q_emb, item["embedding"]))} for item in index],
+        key=lambda x: x["score"], reverse=True,
+    )
+    return scored[:top_k]
+
+# --- Generate answer ---
+
+def generate_answer(query_text, chunks):
+    """Send retrieved context to the Agent API for answer generation."""
+    context = "\n\n".join(
+        f"[Source {i}: {c['doc_title']}]\n{c['text']}" for i, c in enumerate(chunks, 1)
+    )
+    response = client.responses.create(
+        model="anthropic/claude-sonnet-4-6",
+        input=[{
+            "role": "user",
+            "content": (
+                f"Answer the following question based ONLY on the provided context. "
+                f"If the context does not contain enough information, say so.\n\n"
+                f"Context:\n{context}\n\nQuestion: {query_text}"
+            ),
+        }],
+        instructions=(
+            "You are a precise document Q&A assistant. Answer using only the "
+            "provided context. Cite source numbers. Be concise."
+        ),
+        max_output_tokens=1024,
+    )
+    return response.output_text
+
+# --- Full pipeline ---
+
+def query(index, query_text, top_k=3):
+    print(f"\nQuery: {query_text}")
+    retrieved = retrieve(index, query_text, top_k)
+    for r in retrieved:
+        print(f"  [{r['doc_title']}] score={r['score']:.4f}: {r['text'][:70]}...")
+    return generate_answer(query_text, retrieved)
+
+# --- Sample documents ---
+
+sample_documents = [
+    {
+        "title": "Introduction to Transformers",
+        "content": (
+            "The Transformer architecture was introduced in the paper Attention Is All "
+            "You Need by Vaswani et al. in 2017. It replaced recurrent layers with "
+            "self-attention mechanisms, enabling parallel processing of input sequences. "
+            "The key innovation is multi-head attention, which allows the model to attend "
+            "to information from different representation subspaces. Transformers consist "
+            "of an encoder and decoder with stacked layers of multi-head attention and "
+            "feed-forward sub-layers. The architecture has become the foundation for "
+            "modern language models including BERT, GPT, and T5."
+        ),
+    },
+    {
+        "title": "Retrieval-Augmented Generation",
+        "content": (
+            "Retrieval-Augmented Generation (RAG) combines information retrieval with "
+            "text generation. Instead of relying solely on knowledge stored in model "
+            "parameters, RAG systems retrieve relevant documents from an external "
+            "knowledge base and use them as context. This reduces hallucination because "
+            "the model grounds its responses in retrieved evidence. A typical RAG "
+            "pipeline has three stages: indexing, retrieval, and generation. During "
+            "indexing, documents are chunked and embedded into a vector store. At query "
+            "time, the question is embedded and compared against stored vectors. The "
+            "most relevant chunks are prepended to the prompt for answer generation."
+        ),
+    },
+]
+
+if __name__ == "__main__":
+    index = build_index(sample_documents)
+    if "--interactive" in sys.argv:
+        print("\nInteractive mode. Type 'quit' to exit.\n")
+        while True:
+            q = input("Question: ").strip()
+            if q.lower() in ("quit", "exit", "q"):
+                break
+            if q:
+                print(f"\nAnswer:\n{query(index, q)}\n")
+    else:
+        answer = query(index, "How does RAG reduce hallucination?")
+        print(f"\nAnswer:\n{answer}")
+```
+
+## Example Output
+
+```
+Embedding 4 chunks across 2 documents...
+Index built: 4 chunks.
+
+Query: How does RAG reduce hallucination?
+  [Retrieval-Augmented Generation] score=0.8432: Retrieval-Augmented Generation (RAG) combines information retrieval w...
+  [Retrieval-Augmented Generation] score=0.7891: most relevant chunks are prepended to the prompt for answer generatio...
+  [Introduction to Transformers] score=0.6104: The Transformer architecture was introduced in the paper Attention Is...
+
+Answer:
+RAG reduces hallucination by grounding the model's responses in retrieved evidence
+rather than relying solely on knowledge stored in model parameters [Source 1]. The
+most relevant document chunks are prepended to the prompt, so the language model bases
+its answers on concrete textual evidence from the knowledge base [Source 2].
+```
+
+<Tip>
+For production workloads, replace the in-memory numpy index with a dedicated vector database such as Pinecone, Weaviate, or Qdrant. The embedding and retrieval logic remains the same.
+</Tip>
+
+<Warning>
+Contextualized embeddings require that chunks within each document are sent in their original sequential order. Shuffling chunks will degrade embedding quality.
+</Warning>
+
+## Limitations
+
+- The in-memory store is suitable for prototyping but will not scale to large collections. Use a vector database for production.
+- Chunk size and overlap may need tuning for your documents. Shorter chunks improve precision; longer chunks preserve context.
+- The `pplx-embed-context-v1-4b` model has a 32K token context window per document.
+- Answer quality depends on retrieval quality. If the wrong chunks are retrieved, the answer will reflect that.

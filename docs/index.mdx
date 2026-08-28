@@ -1,47 +1,12 @@
 ---
 slug: /
-title: Perplexity API Cookbook
-description: A collection of practical examples and guides for building with Perplexity's API Platform
-keywords: [perplexity, sonar, api, cookbook, examples, tutorials]
+title: Cookbook
+sidebarTitle: Perplexity API Cookbook
+description: Guides and runnable examples for building with the Perplexity Agent, Search, and Embeddings APIs. Search or filter by product and category.
+keywords: [perplexity, api, cookbook, recipes, examples, agent-api, search-api, embeddings]
 ---
 
-A collection of practical examples and guides for building with [**Perplexity's API Platform**](https://docs.perplexity.ai/) - the fastest, most cost-effective AI answer engine with real-time search capabilities.
+import { CookbookGallery } from '/snippets/CookbookGallery.jsx';
+import { COOKBOOK_RECIPES, COOKBOOK_FACETS, COOKBOOK_LABELS } from '/snippets/cookbookData.jsx';
 
-## Quick Start
-
-To get started with any project in this cookbook:
-
-1. **Browse examples** - Find the use case that matches your needs
-2. **Follow the guide** - Each example includes complete setup instructions
-3. **Get the code** - Full implementations are available in our [GitHub repository](https://github.com/perplexityai/api-cookbook)
-4. **Build and customize** - Use the examples as starting points for your projects
-
-## What's Inside
-
-### [Examples](/cookbook/examples/README)
-Ready-to-run projects that demonstrate specific use cases and implementation patterns.
-
-### [Showcase](/cookbook/showcase/briefo/)
-Community-built applications that demonstrate real-world implementations of the API Platform.
-
-### [Integration Guides](/cookbook/articles/memory-management/chat-summary-memory-buffer/README)
-In-depth tutorials for advanced implementations and integrations with other tools.
-
-> **Note**: All complete code examples, scripts, and project files can be found in our [GitHub repository](https://github.com/perplexityai/api-cookbook). The documentation here provides guides and explanations, while the repository contains the full runnable implementations.
-
-## Contributing
-
-Have a project built with API Platform? We'd love to feature it! Check our [Contributing Guidelines](https://github.com/perplexityai/api-cookbook/blob/main/CONTRIBUTING.md) to learn how to:
-
-- Submit example tutorials
-- Add your project to the showcase
-- Improve existing content
-
-## Resources
-
-- [API Documentation](https://docs.perplexity.ai/home)
-- [GitHub Repository](https://github.com/perplexityai/api-cookbook)
-
----
-
-*Maintained by the Perplexity community* 
+<CookbookGallery recipes={COOKBOOK_RECIPES} facets={COOKBOOK_FACETS} labels={COOKBOOK_LABELS} />
