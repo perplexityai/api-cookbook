@@ -1,10 +1,20 @@
 import fs from 'fs';
+import path from 'path';
 import { compile } from '@mdx-js/mdx';
-import { glob } from 'glob';
+
+function findMdxFiles(directory) {
+  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return findMdxFiles(entryPath);
+    }
+    return entry.name.endsWith('.mdx') ? [entryPath] : [];
+  });
+}
 
 async function validateMDX() {
   try {
-    const mdxFiles = await glob('docs/**/*.mdx');
+    const mdxFiles = findMdxFiles('docs').sort();
     
     for (const file of mdxFiles) {
       console.log(`Validating: ${file}`);
