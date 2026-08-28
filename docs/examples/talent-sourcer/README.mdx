@@ -1,0 +1,458 @@
+---
+title: Talent Sourcer
+description: Build a vetted engineer sourcing shortlist with one Agent API request. The model works in a Python sandbox - segmenting the brief, calling people_search across sub-segments, verifying each candidate's role, location, and tenure with web_search, collecting GitHub, social, and publication links, scoring and de-duplicating in code, then rendering an HTML shortlist and sharing it with share_file.
+sidebar_position: 18
+keywords: [agent-api, people-search, web-search, sandbox, share-file, wide-search, recruiting, sourcing, talent, github, html, streaming]
+products: [agent-api]
+categories: [people, sandbox]
+---
+
+# Talent Sourcer
+
+Some tasks aren't hard. They're just big, and that's what trips up agents.
+Sourcing every engineer who fits a hiring brief - the right skill, the right
+city, enough tenure to be worth a call - with each person's current role and
+their public links, is a hundred near-identical lookups, not a hard reasoning
+problem. This example is a small CLI for that job. Give it a role, a skill, a
+location, and a minimum tenure, and it returns a verified shortlist as an HTML
+table: name, current role, company, location, years at the company, a relevance
+score, public links (GitHub, profile, a notable publication), and a verified
+flag per person.
+
+It runs as a single Agent API request built around one tool, `sandbox`, whose
+code calls `people_search` and `web_search` from inside the run. You don't write
+the collection logic. The agent writes and runs it.
+
+## Why one call isn't enough
+
+The obvious first try is one `people_search` call on "engineers who work on LLM
+inference in NYC". It returns the obvious dozen names and nothing else: no
+long-tail coverage, no check that anyone's role is current, no confirmation of
+location or tenure, no links, no scoring. Wide collection needs many searches,
+then per-row verification and bookkeeping the model can't hold in its head. The
+fix isn't a smarter search. It's collection discipline, and that's what
+`sandbox` provides.
+
+## The sandbox does the work
+
+[`sandbox`](https://docs.perplexity.ai/docs/agent-api/tools/sandbox) is an
+isolated container where the agent writes and runs its own Python inside the
+request. You describe the job in plain language, and the model writes the code:
+the segment list, the loop, the hard-filter checks, dedup by `(name, company)`,
+scoring, the sort, the file write. A loop doesn't forget candidate #47, and code
+only writes rows it actually has, so there's nothing to hallucinate. The run
+ends with a real file, returned via `share_file`, instead of text you still have
+to parse.
+
+The run leans on three Agent API tools, `sandbox` first and the other two called
+from inside its code:
+
+- `sandbox` -
+  [code execution in an isolated container](https://docs.perplexity.ai/docs/agent-api/tools/sandbox).
+  The engine: the agent writes the collection loop and runs it server-side.
+- `people_search` -
+  [a dedicated people-finding tool](https://docs.perplexity.ai/docs/agent-api/tools/people-search),
+  not a generic web search. It returns professional details (name, title,
+  company) from public sources, queried the way a recruiter thinks (role,
+  company, seniority, skill, education, location), as structured data the code
+  can dedupe and score.
+- `web_search` -
+  [the verification pass](https://docs.perplexity.ai/docs/agent-api/tools/web-search):
+  confirm each candidate's current role, location, and tenure, and collect their
+  public links - a GitHub profile, another relevant public profile, a notable
+  publication or talk - each with a real URL. Its domain, recency, and date
+  filters let the agent lean on fresh or trusted sources.
+
+You only declare `sandbox` in the request. From inside the run its code reaches
+`people_search` and `web_search` with no separate declaration, each still billed
+per call. That's what lets the whole loop live in one request.
+
+<Note>
+`people_search` returns publicly available professional information only.
+Keep the task framed that way: recruiting, sourcing, or org mapping over broad
+professional criteria, not a private dossier on one named individual.
+</Note>
+
+## Installation
+
+Keep `talent_sourcer.py` and `requirements.txt` in the same directory.
+
+1. Install the dependencies, just the [Perplexity Python SDK](https://github.com/ppl-ai/perplexity-python),
+   pinned in `requirements.txt`:
+
+```text requirements.txt
+perplexityai==0.38.0
+```
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Set your Perplexity API key:
+
+```bash
+export PERPLEXITY_API_KEY="your-api-key-here"
+```
+
+The SDK reads the key from this environment variable.
+
+<Note>
+This example uses the Agent API `sandbox` tool. See the
+[Sandbox docs](https://docs.perplexity.ai/docs/agent-api/tools/sandbox) for
+setup and usage details.
+</Note>
+
+## Usage
+
+```bash
+python talent_sourcer.py --role "engineers" --skill "LLM inference" --location "NYC" --min-tenure 3 --target 25
+```
+
+- `--role` - the kind of person to source, e.g. `"engineers"` (default `engineers`).
+- `--skill` - the experience to require, e.g. `"LLM inference"`.
+- `--location` - where the candidate must be based, e.g. `"NYC"` (optional).
+- `--min-tenure` - minimum years at the current company, e.g. `3` (`0` to skip the filter).
+- `--target` - exactly how many candidates to return, the top N by score (default 25).
+- `--output` - HTML path (default `candidate-shortlist-<time>.html`).
+
+The run writes one self-contained HTML file you can open in a browser, with a row
+per candidate. The full script is `talent_sourcer.py` in this folder.
+
+<Note>
+A full run takes a few minutes (often 2-5), not seconds. The wait is the
+verification: dozens of sequential `people_search` and `web_search` calls are what
+buy completeness. Because the run streams, you watch that progress live instead of
+staring at a blank terminal.
+</Note>
+
+## How it works
+
+The whole job is one Agent API request with the `sandbox` tool, run with
+`stream=True` so events arrive as the work happens:
+
+```python
+stream = client.responses.create(
+    stream=True,
+    model="openai/gpt-5.5",
+    instructions=SOURCER_SYSTEM,
+    input=SOURCER_TASK.format(brief=brief, filters=filters, target=target, columns=", ".join(COLUMNS)),
+    tools=[{"type": "sandbox"}],
+)
+```
+
+We handle three event types. `response.output_text.delta` carries the model's reply
+token by token. `response.sandbox.results` fires once per sandbox execution while
+the run is still going, which is the live progress you watch. `response.completed`
+returns the finished response, which we keep for the file download and cost:
+
+```python
+for event in client.responses.create(stream=True, **create_kwargs):
+    if event.type == "response.output_text.delta":
+        print(event.delta, end="", flush=True)
+    elif event.type == "response.sandbox.results":
+        for line in progress_lines(event):
+            if line != last:
+                print(f"  · {line}", file=sys.stderr)
+                last = line
+    elif event.type == "response.completed":
+        final = event.response
+```
+
+What makes the agent disciplined lives in the prompt. The hard filters are built
+from your flags and passed in as their own block, so "based in NYC" and "3+ years
+at the company" are constraints the code enforces, not hints:
+
+```python
+SOURCER_TASK = """\
+Build a vetted sourcing shortlist of {brief}.
+Return exactly {target} candidates: the top {target} by relevance score.
+
+Hard filters every kept candidate must satisfy:
+{filters}
+
+Workflow, organized in the Python sandbox:
+
+1. Find candidates with people_search. Run several targeted searches across
+   sub-segments (sub-skills, seniority levels, nearby employers, the location)
+   rather than one broad query, so coverage is exhaustive.
+
+2. Verify EACH candidate with web_search against the hard filters: confirm their
+   current title and company, that they are based in the target location, and how
+   long they have been at their current company. Then collect their public links:
+   a GitHub profile, another relevant public profile, and a notable
+   publication, talk, or open-source project - each a real source URL. If you
+   cannot confirm a filter or a link, keep the person but set verified=false.
+   Never invent a role, company, tenure, or URL.
+
+3. In code: collect rows, deduplicate by (name, company), drop candidates that
+   clearly fail a hard filter, assign a relevance_score from 0-100 against the
+   brief, sort by score descending, and keep the top {target}.
+
+4. Render an HTML file named 'candidates.html': a clean, styled page with a
+   heading (the brief and the final count) and a table with these columns:
+   {columns}. In 'Links', render each collected URL as a labeled link
+   (GitHub, Profile, Publication). Show 'Tenure' in years at the current company
+   and 'Verified' as yes/no. Share it with share_file.
+
+As you work, print() a short, human-readable status line from your sandbox code at
+the start of each phase, prefixed with 'PROGRESS:' - for example
+'PROGRESS: Searching for candidates', 'PROGRESS: Verifying candidate 5/40',
+'PROGRESS: Rendering shortlist'. Never put tool names, query strings, or raw
+result counts in these lines, and do not narrate progress in your reply.
+
+Keep your final reply to one short sentence, then a single line:
+TOTAL=<number of candidates in the table>.
+"""
+```
+
+Each rule maps to the result: per-segment search for coverage, hard filters the
+code enforces row by row, `verified=false` instead of an invented role or URL,
+and dedup, scoring, and rendering as code so the accumulation is a program, not a
+memory exercise.
+
+## Full code
+
+The whole tool is one short file.
+
+<Accordion title="Full code - talent_sourcer.py">
+```python
+#!/usr/bin/env python3
+"""Build a vetted sourcing shortlist of engineers. The model runs code in a
+sandbox: it finds candidates by segment with people_search, verifies each with
+web_search - confirming role, location, and tenure, and collecting GitHub,
+social, and publication links - then writes an HTML table and shares it. We
+download the file."""
+
+import argparse
+import os
+import re
+import sys
+from datetime import datetime
+
+from perplexity import Perplexity
+
+MODEL = "openai/gpt-5.5"
+PROGRESS_PREFIX = "PROGRESS:"
+
+DEFAULT_ROLE = "engineers"
+DEFAULT_SKILL = "LLM inference"
+DEFAULT_LOCATION = "NYC"
+DEFAULT_MIN_TENURE = 3
+DEFAULT_TARGET = 25
+
+COLUMNS = ["Name", "Title", "Company", "Location", "Tenure", "Relevance", "Links", "Verified"]
+
+SOURCER_SYSTEM = (
+    "You assemble a vetted sourcing shortlist of technical candidates for a "
+    "recruiter. This is a WIDE collection task: completeness, hard-filter "
+    "matching, and per-row verification matter more than depth on any one person."
+)
+SOURCER_TASK = """\
+Build a vetted sourcing shortlist of {brief}.
+Return exactly {target} candidates: the top {target} by relevance score.
+
+Hard filters every kept candidate must satisfy:
+{filters}
+
+Workflow, organized in the Python sandbox:
+
+1. Find candidates with people_search. Run several targeted searches across
+   sub-segments (sub-skills, seniority levels, nearby employers, the location)
+   rather than one broad query, so coverage is exhaustive.
+
+2. Verify EACH candidate with web_search against the hard filters: confirm their
+   current title and company, that they are based in the target location, and how
+   long they have been at their current company. Then collect their public links:
+   a GitHub profile, another relevant public profile, and a notable
+   publication, talk, or open-source project - each a real source URL. If you
+   cannot confirm a filter or a link, keep the person but set verified=false.
+   Never invent a role, company, tenure, or URL.
+
+3. In code: collect rows, deduplicate by (name, company), drop candidates that
+   clearly fail a hard filter, assign a relevance_score from 0-100 against the
+   brief, sort by score descending, and keep the top {target}.
+
+4. Render an HTML file named 'candidates.html': a clean, styled page with a
+   heading (the brief and the final count) and a table with these columns:
+   {columns}. In 'Links', render each collected URL as a labeled link
+   (GitHub, Profile, Publication). Show 'Tenure' in years at the current company
+   and 'Verified' as yes/no. Share it with share_file.
+
+As you work, print() a short, human-readable status line from your sandbox code at
+the start of each phase, prefixed with 'PROGRESS:' - for example
+'PROGRESS: Searching for candidates', 'PROGRESS: Verifying candidate 5/40',
+'PROGRESS: Rendering shortlist'. Never put tool names, query strings, or raw
+result counts in these lines, and do not narrate progress in your reply.
+
+Keep your final reply to one short sentence, then a single line:
+TOTAL=<number of candidates in the table>.
+"""
+
+
+def build_brief(role, skill, location):
+    brief = f"{role} with hands-on experience in {skill}"
+    return f"{brief} based in {location}" if location else brief
+
+
+def build_filters(skill, location, min_tenure):
+    lines = [f"- Hands-on experience in {skill}."]
+    if location:
+        lines.append(f"- Currently based in {location}.")
+    if min_tenure > 0:
+        lines.append(f"- At least {min_tenure} years at their current company.")
+    return "\n".join(lines)
+
+
+def progress_lines(event):
+    for result in event.model_dump().get("results") or []:
+        for line in (result.get("stdout") or "").splitlines():
+            if line.startswith(PROGRESS_PREFIX):
+                yield line[len(PROGRESS_PREFIX):].strip()
+
+
+def stream_run(client, **create_kwargs):
+    final, last = None, None
+    for event in client.responses.create(stream=True, **create_kwargs):
+        if event.type == "response.output_text.delta":
+            print(event.delta, end="", flush=True)
+        elif event.type == "response.sandbox.results":
+            for line in progress_lines(event):
+                if line != last:
+                    print(f"  · {line}", file=sys.stderr)
+                    last = line
+        elif event.type == "response.completed":
+            final = event.response
+    print()
+    return final
+
+
+def find_candidates(client, brief, filters, target):
+    return stream_run(
+        client,
+        model=MODEL,
+        instructions=SOURCER_SYSTEM,
+        input=SOURCER_TASK.format(
+            brief=brief, filters=filters, target=target, columns=", ".join(COLUMNS)
+        ),
+        tools=[{"type": "sandbox"}],
+    )
+
+
+def final_text(response):
+    return "".join(
+        block.text
+        for item in response.output if item.type == "message"
+        for block in item.content if block.type == "output_text"
+    )
+
+
+def cost(response):
+    usage = getattr(getattr(response, "usage", None), "cost", None)
+    return float(getattr(usage, "total_cost", 0.0) or 0.0)
+
+
+def download_html(client, response, output):
+    files = client.responses.files.list(response.id)
+    html = next(f for f in files.data if f.filename.lower().endswith(".html"))
+    out_path = output or f"candidate-shortlist-{datetime.now():%Y-%m-%d_%H-%M}.html"
+    client.responses.files.content(html.id, response_id=response.id).write_to_file(out_path)
+    return out_path
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build a vetted engineer sourcing shortlist.")
+    parser.add_argument("--role", default=DEFAULT_ROLE)
+    parser.add_argument("--skill", default=DEFAULT_SKILL)
+    parser.add_argument("--location", default=DEFAULT_LOCATION)
+    parser.add_argument("--min-tenure", type=int, default=DEFAULT_MIN_TENURE)
+    parser.add_argument("--target", type=int, default=DEFAULT_TARGET)
+    parser.add_argument("--output")
+    args = parser.parse_args()
+
+    if not os.environ.get("PERPLEXITY_API_KEY"):
+        sys.exit("Set PERPLEXITY_API_KEY in your environment.")
+
+    client = Perplexity()
+    brief = build_brief(args.role, args.skill, args.location)
+    filters = build_filters(args.skill, args.location, args.min_tenure)
+
+    print(f"\nSourcing a vetted shortlist of: {brief} (target {args.target})\n", file=sys.stderr)
+    response = find_candidates(client, brief, filters, args.target)
+    out_path = download_html(client, response, args.output)
+
+    match = re.search(r"TOTAL=(\d+)", final_text(response))
+    total = match.group(1) if match else "?"
+    print(f"\nCandidates: {total}   ${cost(response):.4f}", file=sys.stderr)
+    print(f"Saved shortlist to {out_path}", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()
+```
+</Accordion>
+
+## Example Output
+
+A real run of `python talent_sourcer.py --role "engineers" --skill "LLM
+inference" --location "NYC" --min-tenure 3 --target 25` (results vary with live
+coverage):
+
+Because the run streams, each phase line appears as it happens, first the segment
+sweep, then the per-candidate verification, so you watch the work instead of
+waiting on a blank terminal (progress abridged):
+
+```
+Sourcing a vetted shortlist of: engineers with hands-on experience in LLM inference based in NYC (target 25)
+
+  · Searching for candidates
+  · Verifying candidate 1/30
+  · Verifying candidate 2/30
+  ...
+  · Verifying candidate 30/30
+  · Searching for candidates
+  · Verifying candidate 1/11
+  ...
+  · Verifying candidate 11/11
+  · Rendering shortlist
+Done — the shortlist HTML file has been shared.
+TOTAL=25
+Candidates: 25   $1.8765
+Saved shortlist to candidate-shortlist-2026-06-19_23-47.html
+```
+
+The prompt searches in rounds and verifies more candidates than `--target`, then
+keeps the top N by relevance score. Here it swept two segment rounds, verified
+about 40 people in all, and returned the best 25.
+
+The shared `candidates.html` is a styled table, one row per candidate, with name,
+title, company, location, years at the company, relevance, public links, and a
+verified flag. The candidates are real people surfaced via People Search, each
+with source links. They're sourcing leads for outreach, not endorsements, so
+always confirm before reaching out.
+
+On the run above, the agent returned 25 verified candidates for about \$1.88.
+That covers model tokens over the sandbox loop, one \$0.03 sandbox session, and
+the `people_search` / `web_search` calls billed per invocation. That's a list a
+recruiter would spend half a day assembling, done in minutes. Depth is the dial:
+`--target`, verification breadth, and the model all move the cost.
+
+## Limitations
+
+- Cost scales with depth. Each run pays for model tokens, a `$0.03` sandbox
+  session, and one billed call per `people_search` / `web_search` invocation. A
+  thorough run is dollars, not cents.
+- Coverage varies. Output depends on live results. Not every candidate has a
+  public GitHub or confirmable tenure - the `verified` flag and `Links` column
+  reflect what could actually be sourced.
+- Keep it professional and wide. `people_search` returns public professional
+  information, so frame the task as recruiting, sourcing, or org mapping, not a
+  deep dossier on one person.
+
+## Resources
+
+- [People Search](https://docs.perplexity.ai/docs/agent-api/tools/people-search)
+- [Sandbox](https://docs.perplexity.ai/docs/agent-api/tools/sandbox)
+- [Web Search](https://docs.perplexity.ai/docs/agent-api/tools/web-search)
+- [Streaming Outputs](https://docs.perplexity.ai/docs/agent-api/output-control)
+- [Agent API Quickstart](https://docs.perplexity.ai/docs/agent-api/quickstart)
+- [Pricing](https://docs.perplexity.ai/docs/getting-started/pricing)

@@ -10,72 +10,83 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout cookbook repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           path: cookbook-repo
           
       - name: Checkout docs repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: ${{ secrets.DOCS_REPO_NAME || 'ppl-ai/api-docs' }}
           token: ${{ secrets.DOCS_REPO_TOKEN }}
           path: docs-repo
           
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: docs-repo/package.json
+          node-version: '20'
           
       - name: Install docs dependencies
         run: |
+          corepack enable
           cd docs-repo
-          npm install
+          pnpm install --frozen-lockfile
           
       - name: Clear existing cookbook content
         run: |
-          rm -rf docs-repo/cookbook/* || true
+          rm -rf docs-repo/docs/cookbook
           
       - name: Copy cookbook content to docs repository
         run: |
-          # Create cookbook directory if it doesn't exist
-          mkdir -p docs-repo/cookbook
-          
-          # Copy docs content from cookbook to docs repo (already in MDX format)
-          cp -r cookbook-repo/docs/* docs-repo/cookbook/
-          
-          # Copy static assets if they exist
+          mkdir -p docs-repo/docs/cookbook
+
+          cp -a cookbook-repo/docs/. docs-repo/docs/cookbook/
+
           if [ -d "cookbook-repo/static" ]; then
-            mkdir -p docs-repo/cookbook/static
-            cp -r cookbook-repo/static/* docs-repo/cookbook/static/
+            mkdir -p docs-repo/docs/cookbook/static
+            cp -a cookbook-repo/static/. docs-repo/docs/cookbook/static/
           fi
-          
-      - name: Generate cookbook navigation
-        run: |
-          cd docs-repo  
-          # Run the navigation generation script
-          node scripts/generate-cookbook-nav.js
           
       - name: Configure git
         run: |
           cd docs-repo
           git config --local user.email "cookbook-sync@perplexity.ai"
           git config --local user.name "Cookbook Sync Bot"
-          
-      - name: Commit and push changes
+
+      - name: Commit cookbook content
+        id: cookbook-content
         run: |
           cd docs-repo
-          git add .
+          git add docs/cookbook
           if git diff --staged --quiet; then
-            echo "No changes to commit"
-            echo "CHANGES_MADE=false" >> $GITHUB_ENV
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             git commit -m "📚 Sync cookbook from ${{ github.repository }}@${{ github.sha }}
 
-            Updated cookbook content and navigation from community contributions.
-            
+            Updated cookbook content from the canonical repository.
+
             Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate cookbook navigation and gallery data
+        run: |
+          cd docs-repo
+          pnpm sync-cookbook
+
+      - name: Commit and push changes
+        run: |
+          cd docs-repo
+          git add config/navigation.json snippets/cookbookData.jsx
+          if [ "${{ steps.cookbook-content.outputs.changed }}" = "true" ]; then
+            git commit --amend --no-edit
+            git push
+            echo "CHANGES_MADE=true" >> $GITHUB_ENV
+          elif git diff --staged --quiet; then
+            echo "No changes to commit"
+            echo "CHANGES_MADE=false" >> $GITHUB_ENV
+          else
+            git commit -m "📚 Regenerate cookbook navigation and gallery data"
             git push
             echo "CHANGES_MADE=true" >> $GITHUB_ENV
           fi
@@ -83,7 +94,7 @@ jobs:
       - name: Create deployment comment
         if: env.CHANGES_MADE == 'true'
         continue-on-error: true
-        uses: actions/github-script@v8
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v8.0.0
         with:
           script: |
             try {
@@ -100,7 +111,7 @@ jobs:
                 
                 📈 Changes will be live on docs.perplexity.ai within a few minutes.
                 
-                🔗 [View docs site](https://docs.perplexity.ai/cookbook)`
+                🔗 [View docs site](https://docs.perplexity.ai/docs/cookbook)`
               });
               console.log('✅ Success comment posted successfully');
             } catch (error) {
@@ -111,7 +122,7 @@ jobs:
       - name: Report sync failure
         if: failure()
         continue-on-error: true
-        uses: actions/github-script@v8
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v8.0.0
         with:
           script: |
             try {
@@ -145,4 +156,4 @@ jobs:
           else
             echo "ℹ️  No changes to sync"
             echo "📄 Cookbook content is already up to date"
-          fi 
+          fi

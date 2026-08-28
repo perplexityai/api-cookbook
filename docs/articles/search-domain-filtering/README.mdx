@@ -1,0 +1,588 @@
+---
+title: Search Domain Filtering Patterns
+description: Use search_domain_filter for focused search — allowlist patterns for trusted sources, denylist for excluding domains, and practical patterns for news, government, and competitive intelligence
+sidebar_position: 9
+keywords: [domain-filter, search-filter, allowlist, denylist, web-search, agent-api]
+products: [agent-api]
+categories: [search-filtering]
+---
+
+This guide covers search domain filtering on the Agent API. You will learn how to use allowlists to restrict search to trusted domains, denylists to exclude unwanted sources, and practical patterns for common use cases like news-only search, government data, and competitor exclusion.
+
+<Info>
+Domain filtering is configured per-tool under the `tools` array via `tools[].filters.search_domain_filter`. For the full reference, see [Agent API Filters](/docs/agent-api/tools/web-search#filters).
+</Info>
+
+## Prerequisites
+
+Install the Perplexity SDK:
+
+<CodeGroup>
+```bash Python
+pip install perplexityai
+```
+
+```bash TypeScript
+npm install @perplexity-ai/perplexity_ai
+```
+</CodeGroup>
+
+If you don't have an API key yet:
+
+<Card title="Get your Perplexity API Key" icon="key" arrow="True" horizontal="True" iconType="solid" cta="Click here" href="https://perplexity.ai/account/api">
+Navigate to the **API Keys** tab in the API Portal and generate a new key.
+</Card>
+
+Then export your API key as an environment variable:
+```bash
+export PERPLEXITY_API_KEY="your-api-key"
+```
+
+## How Domain Filtering Works
+
+The `search_domain_filter` parameter accepts a list of domain strings:
+
+- **Allowlist** (no prefix): Include only results from these domains. `["reuters.com", "apnews.com"]` means search only Reuters and AP News.
+- **Denylist** (`-` prefix): Exclude results from these domains. `["-reddit.com", "-twitter.com"]` means exclude Reddit and Twitter.
+
+*You can also add a path to a domain to narrow results to one section of a site — `["nature.com/articles"]` searches only that section, while `["-reddit.com/r/all"]` excludes that section but still searches the rest of the site.*
+
+<Warning>
+**Never mix allowlist and denylist entries in the same request.** The API does not support combining `"reuters.com"` and `"-reddit.com"` in the same array. Use either all allowlist or all denylist entries.
+</Warning>
+
+## Basic Domain Filtering
+
+Domain filters are configured per-tool under the `tools` array.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# Allowlist: search only specific domains
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What are the latest developments in AI regulation?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": ["reuters.com", "apnews.com", "bbc.com"],
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What are the latest developments in AI regulation?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: ["reuters.com", "apnews.com", "bbc.com"],
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Pattern: Denylist Filtering
+
+Use the `-` prefix to exclude specific domains from search results.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# Denylist: exclude social media and user-generated content
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What are the latest developments in AI regulation?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": ["-reddit.com", "-twitter.com", "-quora.com", "-medium.com"],
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What are the latest developments in AI regulation?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: ["-reddit.com", "-twitter.com", "-quora.com", "-medium.com"],
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Pattern: Path Filtering
+
+Add a path after a domain to limit results to one section of a site — such as documentation, a subreddit, a blog, or a news vertical. This works in both allowlist and denylist mode.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# Allowlist a single section of a site, and exclude a section of another
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="Summarize recent peer-reviewed CRISPR results",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": ["nature.com/articles", "science.org"],
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "Summarize recent peer-reviewed CRISPR results",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: ["nature.com/articles", "science.org"],
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+<Note>
+Paths match on segment boundaries, so `"example.com/docs"` matches `/docs` and `/docs/intro` but not `/documentation`. Subdomains are included (`blog.example.com/docs` matches). Query strings after the boundary are allowed (`/docs?x=1`).
+</Note>
+
+## Pattern: News-Only Search
+
+Restrict results to major news outlets for current events and breaking news.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+NEWS_DOMAINS = [
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "theguardian.com",
+    "bloomberg.com",
+    "ft.com",
+]
+
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What happened in global markets today?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": NEWS_DOMAINS,
+            "search_recency_filter": "day",
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const NEWS_DOMAINS = [
+    "reuters.com",
+    "apnews.com",
+    "bbc.com",
+    "nytimes.com",
+    "washingtonpost.com",
+    "theguardian.com",
+    "bloomberg.com",
+    "ft.com",
+];
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What happened in global markets today?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: NEWS_DOMAINS,
+            search_recency_filter: "day",
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+<Tip>
+Combine `search_domain_filter` with `search_recency_filter` for time-sensitive queries. Options are `day`, `week`, `month`, and `year`.
+</Tip>
+
+## Pattern: Government and Official Sources
+
+Restrict to government domains for policy, regulation, and official statistics.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+GOV_DOMAINS = [
+    ".gov",          # US federal and state
+    ".gov.uk",       # UK government
+    ".europa.eu",    # EU institutions
+    "who.int",       # World Health Organization
+    "worldbank.org", # World Bank
+]
+
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What are the current US federal guidelines on AI usage in healthcare?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": GOV_DOMAINS,
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const GOV_DOMAINS = [
+    ".gov",
+    ".gov.uk",
+    ".europa.eu",
+    "who.int",
+    "worldbank.org",
+];
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What are the current US federal guidelines on AI usage in healthcare?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: GOV_DOMAINS,
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Pattern: Academic and Research Filtering
+
+Target educational and research institutions.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+ACADEMIC_DOMAINS = [
+    ".edu",
+    "arxiv.org",
+    "scholar.google.com",
+    "pubmed.ncbi.nlm.nih.gov",
+    "nature.com",
+    "science.org",
+    "ieee.org",
+]
+
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What are recent advances in protein structure prediction?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": ACADEMIC_DOMAINS,
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const ACADEMIC_DOMAINS = [
+    ".edu",
+    "arxiv.org",
+    "scholar.google.com",
+    "pubmed.ncbi.nlm.nih.gov",
+    "nature.com",
+    "science.org",
+    "ieee.org",
+];
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What are recent advances in protein structure prediction?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: ACADEMIC_DOMAINS,
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Pattern: Competitor Exclusion
+
+Use denylists to exclude competitor websites from search results when building customer-facing content.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# Exclude competitor domains from product research
+EXCLUDED_DOMAINS = [
+    "-competitor-a.com",
+    "-competitor-b.io",
+    "-competitor-c.ai",
+]
+
+response = client.responses.create(
+    model="openai/gpt-5.4",
+    input="What are the best practices for building real-time data pipelines?",
+    tools=[{
+        "type": "web_search",
+        "filters": {
+            "search_domain_filter": EXCLUDED_DOMAINS,
+        },
+    }],
+)
+print(response.output_text)
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const EXCLUDED_DOMAINS = [
+    "-competitor-a.com",
+    "-competitor-b.io",
+    "-competitor-c.ai",
+];
+
+const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: "What are the best practices for building real-time data pipelines?",
+    tools: [{
+        type: "web_search" as const,
+        filters: {
+            search_domain_filter: EXCLUDED_DOMAINS,
+        },
+    }],
+});
+console.log(response.output_text);
+```
+</CodeGroup>
+
+## Configurable Filter Builder
+
+A reusable helper that builds domain filter configurations from named presets.
+
+<CodeGroup>
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+
+# Named filter presets
+FILTER_PRESETS = {
+    "news": ["reuters.com", "apnews.com", "bbc.com", "bloomberg.com", "ft.com"],
+    "academic": [".edu", "arxiv.org", "nature.com", "science.org", "pubmed.ncbi.nlm.nih.gov"],
+    "government": [".gov", ".gov.uk", ".europa.eu", "who.int"],
+    "tech": ["techcrunch.com", "arstechnica.com", "theverge.com", "wired.com"],
+    "no_social": ["-reddit.com", "-twitter.com", "-facebook.com", "-tiktok.com", "-quora.com"],
+    "no_seo_spam": ["-pinterest.com", "-medium.com", "-hubspot.com"],
+}
+
+
+def search_with_preset(query: str, preset: str, recency: str = None) -> str:
+    """Run a search with a named domain filter preset."""
+    if preset not in FILTER_PRESETS:
+        raise ValueError(f"Unknown preset: {preset}. Options: {list(FILTER_PRESETS.keys())}")
+
+    filters = {"search_domain_filter": FILTER_PRESETS[preset]}
+    if recency:
+        filters["search_recency_filter"] = recency
+
+    response = client.responses.create(
+        model="openai/gpt-5.4",
+        input=query,
+        tools=[{"type": "web_search", "filters": filters}],
+    )
+    return response.output_text
+
+
+# Usage
+print("--- News Search ---")
+print(search_with_preset("Latest AI regulation news", "news", recency="week"))
+
+print("\n--- Academic Search ---")
+print(search_with_preset("CRISPR gene editing recent papers", "academic"))
+
+print("\n--- Clean Search (no social media) ---")
+print(search_with_preset("Best Python testing frameworks", "no_social"))
+```
+
+```typescript TypeScript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+
+const client = new Perplexity();
+
+const FILTER_PRESETS: Record<string, string[]> = {
+    news: ["reuters.com", "apnews.com", "bbc.com", "bloomberg.com", "ft.com"],
+    academic: [".edu", "arxiv.org", "nature.com", "science.org", "pubmed.ncbi.nlm.nih.gov"],
+    government: [".gov", ".gov.uk", ".europa.eu", "who.int"],
+    tech: ["techcrunch.com", "arstechnica.com", "theverge.com", "wired.com"],
+    no_social: ["-reddit.com", "-twitter.com", "-facebook.com", "-tiktok.com", "-quora.com"],
+    no_seo_spam: ["-pinterest.com", "-medium.com", "-hubspot.com"],
+};
+
+async function searchWithPreset(query: string, preset: string, recency?: string): Promise<string> {
+    if (!(preset in FILTER_PRESETS)) {
+        throw new Error(`Unknown preset: ${preset}. Options: ${Object.keys(FILTER_PRESETS).join(", ")}`);
+    }
+
+    const filters: Record<string, any> = { search_domain_filter: FILTER_PRESETS[preset] };
+    if (recency) filters.search_recency_filter = recency;
+
+    const response = await client.responses.create({
+        model: "openai/gpt-5.4",
+        input: query,
+        tools: [{ type: "web_search" as const, filters }],
+    });
+    return response.output_text;
+}
+
+console.log("--- News Search ---");
+console.log(await searchWithPreset("Latest AI regulation news", "news", "week"));
+
+console.log("\n--- Academic Search ---");
+console.log(await searchWithPreset("CRISPR gene editing recent papers", "academic"));
+
+console.log("\n--- Clean Search (no social media) ---");
+console.log(await searchWithPreset("Best Python testing frameworks", "no_social"));
+```
+</CodeGroup>
+
+## Common Pitfalls
+
+### Mixing Allowlist and Denylist
+
+```python
+# ❌ WRONG: mixing allowlist and denylist
+search_domain_filter=["reuters.com", "-reddit.com"]
+
+# ✅ CORRECT: use only allowlist
+search_domain_filter=["reuters.com", "apnews.com", "bbc.com"]
+
+# ✅ CORRECT: use only denylist
+search_domain_filter=["-reddit.com", "-twitter.com"]
+```
+
+### Using Wildcards Incorrectly
+
+```python
+# ❌ WRONG: wildcards are not supported
+search_domain_filter=["*.gov"]
+
+# ✅ CORRECT: use the TLD directly
+search_domain_filter=[".gov"]
+
+# ✅ CORRECT: narrow to a section with a path prefix (no wildcards)
+search_domain_filter=["example.com/blog"]
+```
+
+### Empty Filter Arrays
+
+```python
+# ❌ WRONG: empty array has undefined behavior
+search_domain_filter=[]
+
+# ✅ CORRECT: omit the parameter to search all domains
+# (simply don't include search_domain_filter)
+```
+
+## Tips and Best Practices
+
+1. **Keep allowlists focused.** 5-10 domains is usually sufficient. Too many domains dilutes the filter's purpose.
+
+2. **Use denylists for broad exclusion.** When you want to exclude a few noisy sources but otherwise search the full web, denylists are more practical than trying to allowlist everything else.
+
+3. **Combine with recency filters.** For time-sensitive queries, add `search_recency_filter` alongside domain filters.
+
+4. **Test your filters.** Run the same query with and without filters to verify that results change as expected.
+
+5. **TLD filters work broadly.** Using `.gov` matches any domain ending in `.gov`, including `whitehouse.gov`, `irs.gov`, and state domains like `ca.gov`.
+
+6. **Store presets in configuration.** Define filter presets in your app configuration rather than hardcoding them in every request.
+
+## Next Steps
+
+<CardGroup cols={2}>
+<Card title="Agent API Filters" icon="filter" href="/docs/agent-api/tools/web-search#filters">
+Full reference for domain, date range, and location filters on the Agent API.
+</Card>
+
+<Card title="Search API Filters" icon="filter" href="/docs/search/filters/domain-filter">
+Domain filtering on the raw Search API for result-level control.
+</Card>
+
+<Card title="Academic Search" icon="graduation-cap" href="/docs/cookbook/articles/academic-search/README">
+Specialized academic search with domain filtering.
+</Card>
+</CardGroup>

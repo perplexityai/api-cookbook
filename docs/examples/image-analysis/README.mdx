@@ -1,0 +1,263 @@
+---
+title: Image Analysis
+description: Vision-powered image analysis with web search for context-enriched results using the Perplexity Agent API
+sidebar_position: 8
+keywords: [vision, image-analysis, base64, web-search, multimodal, agent-api]
+products: [agent-api]
+categories: [multimodal, function-calling]
+---
+
+# Image Analysis
+
+Analyze images using vision models through the Perplexity Agent API, then enrich the analysis with web search to provide real-world context. This example combines image understanding with live information retrieval in a two-step pipeline: identify what is in the image, then research the identified subjects.
+
+## Features
+
+- Upload images via base64 encoding or public HTTPS URL
+- Analyze images with vision-capable models like `openai/gpt-5.4` through the Agent API
+- Combine image analysis with web search for context enrichment
+- Two-step pipeline: identify, then research
+- Support for PNG, JPEG, WEBP, and GIF formats
+
+## Installation
+
+<CodeGroup>
+```bash Python
+pip install perplexityai
+```
+
+```bash TypeScript
+npm install @perplexity-ai/perplexity_ai
+```
+</CodeGroup>
+
+```bash
+export PERPLEXITY_API_KEY="your_api_key_here"
+```
+
+## Usage
+
+<CodeGroup>
+```bash Python
+python image_analysis.py path/to/photo.jpg
+python image_analysis.py https://example.com/photo.jpg
+```
+
+```bash TypeScript
+npx tsx image_analysis.ts path/to/photo.jpg
+npx tsx image_analysis.ts https://example.com/photo.jpg
+```
+</CodeGroup>
+
+## Full Code
+
+<CodeGroup>
+```python Python
+import sys
+import base64
+from perplexity import Perplexity
+
+client = Perplexity()
+
+
+def encode_image(image_path):
+    """Read a local image and return a base64 data URI."""
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    ext = image_path.rsplit(".", 1)[-1].lower()
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+            "webp": "image/webp", "gif": "image/gif"}.get(ext, "image/png")
+    return f"data:{mime};base64,{encoded}"
+
+
+def identify_image(image_source):
+    """Step 1: Identify objects and subjects in an image."""
+    image_url = image_source if image_source.startswith("http") else encode_image(image_source)
+
+    response = client.responses.create(
+        model="openai/gpt-5.4",
+        input=[{
+            "role": "user",
+            "content": [
+                {
+                    "type": "input_text",
+                    "text": (
+                        "Analyze this image in detail. Identify all notable objects, "
+                        "people, landmarks, species, or text. For each, provide a "
+                        "concise label and brief description. Format as a numbered list."
+                    ),
+                },
+                {"type": "input_image", "image_url": image_url},
+            ],
+        }],
+        max_output_tokens=1024,
+    )
+    return response.output_text
+
+
+def research_subjects(identification_text):
+    """Step 2: Research identified subjects with web search."""
+    response = client.responses.create(
+        model="openai/gpt-5.4",
+        input=(
+            f"The following subjects were identified in an image:\n\n"
+            f"{identification_text}\n\n"
+            f"Research each subject. For each, provide:\n"
+            f"- What it is and why it is notable\n"
+            f"- Key facts or recent news\n"
+            f"- Historical or cultural significance if applicable\n\n"
+            f"Combine the analysis into a comprehensive report."
+        ),
+        tools=[{"type": "web_search"}],
+        instructions="You are an image research assistant. Provide accurate, up-to-date information. Synthesize image observations with research.",
+    )
+    return response.output_text
+
+
+def analyze(image_source):
+    """Full pipeline: identify then research."""
+    print(f"Analyzing: {image_source}\n")
+    print("Step 1: Identifying subjects...")
+    identification = identify_image(image_source)
+    print(f"\n{identification}\n")
+    print("Step 2: Researching subjects...")
+    report = research_subjects(identification)
+    print(f"\n{report}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python image_analysis.py <image_path_or_url>")
+        sys.exit(1)
+    analyze(sys.argv[1])
+```
+
+```typescript TypeScript
+import Perplexity from "@perplexity-ai/perplexity_ai";
+import * as fs from "fs";
+import * as path from "path";
+
+const client = new Perplexity();
+
+function encodeImage(imagePath: string): string {
+  const encoded = fs.readFileSync(imagePath).toString("base64");
+  const ext = path.extname(imagePath).slice(1).toLowerCase();
+  const mime: Record<string, string> = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+    webp: "image/webp", gif: "image/gif",
+  };
+  return `data:${mime[ext] || "image/png"};base64,${encoded}`;
+}
+
+async function identifyImage(imageSource: string): Promise<string> {
+  const imageUrl = imageSource.startsWith("http")
+    ? imageSource
+    : encodeImage(imageSource);
+
+  const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input: [{
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: "Analyze this image in detail. Identify all notable objects, "
+            + "people, landmarks, species, or text. For each, provide a "
+            + "concise label and brief description. Format as a numbered list.",
+        },
+        { type: "input_image", image_url: imageUrl },
+      ],
+    }],
+    max_output_tokens: 1024,
+  });
+  return response.output_text;
+}
+
+async function researchSubjects(identificationText: string): Promise<string> {
+  const response = await client.responses.create({
+    model: "openai/gpt-5.4",
+    input:
+      `The following subjects were identified in an image:\n\n`
+      + `${identificationText}\n\n`
+      + `Research each subject. For each, provide:\n`
+      + `- What it is and why it is notable\n`
+      + `- Key facts or recent news\n`
+      + `- Historical or cultural significance if applicable\n\n`
+      + `Combine the analysis into a comprehensive report.`,
+    tools: [{ type: "web_search" }],
+    instructions: "You are an image research assistant. Provide accurate, up-to-date information. Synthesize image observations with research.",
+  });
+  return response.output_text;
+}
+
+async function analyze(imageSource: string): Promise<void> {
+  console.log(`Analyzing: ${imageSource}\n`);
+  console.log("Step 1: Identifying subjects...");
+  const identification = await identifyImage(imageSource);
+  console.log(`\n${identification}\n`);
+  console.log("Step 2: Researching subjects...");
+  const report = await researchSubjects(identification);
+  console.log(`\n${report}`);
+}
+
+const arg = process.argv[2];
+if (!arg) { console.log("Usage: npx tsx image_analysis.ts <image_path_or_url>"); process.exit(1); }
+analyze(arg);
+```
+</CodeGroup>
+
+## Example Output
+
+```
+Analyzing: golden_gate.jpg
+
+Step 1: Identifying subjects...
+
+1. Golden Gate Bridge - Iconic red-orange suspension bridge spanning
+   the Golden Gate strait in San Francisco, California.
+2. San Francisco Bay - Body of water beneath the bridge, connecting
+   to the Pacific Ocean.
+3. Marin Headlands - Hilly terrain on the far side, part of the
+   Golden Gate National Recreation Area.
+4. Fog bank - Low-lying cloud formation rolling in from the Pacific.
+
+Step 2: Researching subjects...
+
+## Golden Gate Bridge - Comprehensive Analysis
+
+### The Bridge
+The Golden Gate Bridge is a suspension bridge spanning the one-mile-wide
+strait connecting San Francisco Bay to the Pacific Ocean. Completed in
+1937, it held the record for the longest suspension bridge span at 4,200
+feet until 1964. Its "International Orange" color was chosen for fog
+visibility and aesthetic harmony.
+
+### San Francisco Bay
+San Francisco Bay is a shallow estuary encompassing approximately 1,600
+square miles of watershed, one of the largest natural harbors on the
+Pacific coast.
+
+### Marin Headlands
+Part of the Golden Gate National Recreation Area, offering hiking trails
+with panoramic views of the bridge and city skyline.
+
+### Fog Patterns
+Summer fog through the Golden Gate is a defining feature of San
+Francisco's microclimate, formed when warm inland air draws cool Pacific
+air through the strait.
+```
+
+<Warning>
+Base64-encoded images count toward input token usage. A 1024x768 image consumes approximately 1,048 tokens. The maximum file size for base64 images is 50 MB.
+</Warning>
+
+<Info>
+Vision input is supported on the Agent API via the `input_image` content type. Use a vision-capable model like `openai/gpt-5.4`. Check the [Agent API Image Attachments docs](/docs/agent-api/image-attachments) for supported formats and size limits.
+</Info>
+
+## Limitations
+
+- Image analysis requires a vision-capable model (e.g., `openai/gpt-5.4`). Not all models support `input_image`.
+- Web search quality in Step 2 depends on identification accuracy in Step 1.
+- Only publicly accessible HTTPS URLs work for URL-based input. Private URLs will fail.
+- Animated GIFs are supported but only the first frame is analyzed.

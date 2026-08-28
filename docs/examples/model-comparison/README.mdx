@@ -1,0 +1,346 @@
+---
+title: Multi-Provider Model Comparison
+description: A CLI tool that sends the same prompt to multiple AI models via Perplexity's Agent API and compares response quality, latency, and cost
+sidebar_position: 8
+keywords: [model-comparison, multi-provider, benchmarking, agent-api, latency, cost]
+products: [agent-api]
+categories: [orchestration]
+---
+
+# Multi-Provider Model Comparison
+
+A command-line tool that sends the same prompt to multiple AI models through Perplexity's Agent API and produces a side-by-side comparison of response quality, latency, and cost. Useful for evaluating which model best fits your use case.
+
+## Features
+
+- Send identical prompts to 5 models across different providers in a single run
+- Measure response latency using wall-clock timing
+- Extract per-request cost from the `response.usage.cost.total_cost` field
+- Tabulated output comparing response length, latency, and cost
+- Model fallback chain support using the `models=[...]` parameter for high-availability workflows
+- Configurable prompt input via command-line argument or file
+
+## Supported Models
+
+The default comparison set spans five providers:
+
+| Model | Provider |
+|-------|----------|
+| `openai/gpt-5.4` | OpenAI |
+| `anthropic/claude-sonnet-4-6` | Anthropic |
+| `google/gemini-3.1-flash-lite` | Google |
+| `xai/grok-4.20-non-reasoning` | xAI |
+| `perplexity/sonar` | Perplexity |
+
+## Installation
+
+```bash
+pip install perplexityai
+```
+
+## API Key Setup
+
+Set your Perplexity API key as an environment variable. The SDK reads it automatically:
+
+```bash
+export PERPLEXITY_API_KEY="your_api_key_here"
+```
+
+<Info>
+Perplexity's Agent API provides access to models from multiple providers through a single API key. You do not need separate API keys for OpenAI, Anthropic, Google, or xAI.
+</Info>
+
+## Usage
+
+### Compare models with a prompt
+
+```bash
+python model_comparison.py "Explain the CAP theorem in distributed systems"
+```
+
+### Read the prompt from a file
+
+```bash
+python model_comparison.py --file prompt.txt
+```
+
+### Use a custom set of models
+
+```bash
+python model_comparison.py "What is quantum entanglement?" \
+  --models openai/gpt-5.4 anthropic/claude-sonnet-4-6 perplexity/sonar
+```
+
+### Export results as JSON
+
+```bash
+python model_comparison.py "Summarize recent AI safety research" --json > results.json
+```
+
+### Use model fallback chain
+
+Instead of comparing models, you can test the fallback chain feature. The API tries each model in order until one succeeds:
+
+```bash
+python model_comparison.py "Latest AI news" --fallback
+```
+
+## How It Works
+
+1. The CLI accepts a prompt and an optional list of models.
+2. For each model, the tool records a start timestamp, calls `client.responses.create(model=..., input=...)`, and records the end timestamp.
+3. From each response, it extracts `response.usage.cost.total_cost` for the request cost and computes latency as the elapsed wall-clock time.
+4. Results are collected and displayed in a comparison table sorted by latency.
+5. In fallback mode, the tool sends a single request with `models=[...]` and reports which model was ultimately used.
+
+<Tip>
+The `response.usage.cost` object includes `input_cost`, `output_cost`, and `total_cost` in USD. This makes it straightforward to compare the true cost of each model for your specific prompt.
+</Tip>
+
+## Full Code
+
+<CodeGroup>
+```python Python
+import sys
+import json
+import time
+import argparse
+from typing import List, Optional
+from perplexity import Perplexity
+
+DEFAULT_MODELS = [
+    "openai/gpt-5.4",
+    "anthropic/claude-sonnet-4-6",
+    "google/gemini-3.1-flash-lite",
+    "xai/grok-4.20-non-reasoning",
+    "perplexity/sonar",
+]
+
+
+def compare_models(prompt: str, models: List[str]) -> List[dict]:
+    """Send the same prompt to each model and collect metrics."""
+    client = Perplexity()
+    results = []
+
+    for model in models:
+        print(f"  Querying {model}...")
+        try:
+            start = time.time()
+            response = client.responses.create(
+                model=model,
+                input=prompt,
+                max_output_tokens=1024,
+            )
+            elapsed = time.time() - start
+
+            output_text = response.output_text
+            total_cost = response.usage.cost.total_cost
+            input_tokens = response.usage.input_tokens
+            output_tokens = response.usage.output_tokens
+
+            results.append({
+                "model": model,
+                "status": "success",
+                "latency_s": round(elapsed, 2),
+                "response_length": len(output_text),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": total_cost,
+                "preview": output_text[:120].replace("\n", " "),
+            })
+        except Exception as e:
+            results.append({
+                "model": model,
+                "status": "error",
+                "error": str(e),
+                "latency_s": None,
+                "response_length": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": None,
+                "preview": "",
+            })
+
+    return results
+
+
+def run_fallback(prompt: str, models: List[str]) -> dict:
+    """Send a single request with a model fallback chain."""
+    client = Perplexity()
+
+    print(f"  Sending request with fallback chain: {models}")
+    start = time.time()
+    response = client.responses.create(
+        models=models,
+        input=prompt,
+        max_output_tokens=1024,
+    )
+    elapsed = time.time() - start
+
+    return {
+        "requested_models": models,
+        "model_used": response.model,
+        "latency_s": round(elapsed, 2),
+        "response_length": len(response.output_text),
+        "cost_usd": response.usage.cost.total_cost,
+        "preview": response.output_text[:200].replace("\n", " "),
+    }
+
+
+def format_table(results: List[dict]) -> str:
+    """Format comparison results as a text table."""
+    # Sort by latency (successful responses first)
+    successful = [r for r in results if r["status"] == "success"]
+    failed = [r for r in results if r["status"] != "success"]
+    successful.sort(key=lambda r: r["latency_s"])
+
+    lines = []
+    header = f"{'Model':<42} {'Latency':>8} {'Length':>8} {'Tokens':>8} {'Cost':>10}"
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    for r in successful:
+        tokens = f"{r['input_tokens']}+{r['output_tokens']}"
+        cost = f"${r['cost_usd']:.5f}"
+        lines.append(
+            f"{r['model']:<42} {r['latency_s']:>7.2f}s {r['response_length']:>8} {tokens:>8} {cost:>10}"
+        )
+
+    for r in failed:
+        lines.append(f"{r['model']:<42} {'FAILED':>8} {'-':>8} {'-':>8} {'-':>10}")
+
+    return "\n".join(lines)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Multi-Provider Model Comparison"
+    )
+    parser.add_argument("prompt", nargs="?", help="The prompt to send")
+    parser.add_argument("--file", help="Read prompt from a file")
+    parser.add_argument(
+        "--models",
+        nargs="+",
+        default=DEFAULT_MODELS,
+        help="Models to compare",
+    )
+    parser.add_argument(
+        "--fallback",
+        action="store_true",
+        help="Use model fallback chain instead of comparing",
+    )
+    parser.add_argument(
+        "--json", action="store_true", help="Output results as JSON"
+    )
+    args = parser.parse_args()
+
+    # Resolve prompt
+    if args.file:
+        with open(args.file, "r") as f:
+            prompt = f.read().strip()
+    elif args.prompt:
+        prompt = args.prompt
+    else:
+        print("Error: Provide a prompt or use --file.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Prompt: {prompt[:80]}{'...' if len(prompt) > 80 else ''}\n")
+
+    if args.fallback:
+        print("Running model fallback chain...\n")
+        result = run_fallback(prompt, args.models)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"Fallback chain: {' -> '.join(result['requested_models'])}")
+            print(f"Model used:     {result['model_used']}")
+            print(f"Latency:        {result['latency_s']}s")
+            print(f"Response length: {result['response_length']} chars")
+            print(f"Cost:           ${result['cost_usd']:.5f}")
+            print(f"\nPreview: {result['preview']}")
+    else:
+        print(f"Comparing {len(args.models)} models...\n")
+        results = compare_models(prompt, args.models)
+        if args.json:
+            print(json.dumps(results, indent=2))
+        else:
+            print(format_table(results))
+            print(f"\nComparison complete. {len(results)} models evaluated.")
+
+
+if __name__ == "__main__":
+    main()
+```
+</CodeGroup>
+
+## Example Output
+
+Running the comparison:
+
+```bash
+python model_comparison.py "Explain the CAP theorem in distributed systems"
+```
+
+Produces output like:
+
+```
+Prompt: Explain the CAP theorem in distributed systems
+
+Comparing 5 models...
+
+  Querying openai/gpt-5.4...
+  Querying anthropic/claude-sonnet-4-6...
+  Querying google/gemini-3.1-flash-lite...
+  Querying xai/grok-4.20-non-reasoning...
+  Querying perplexity/sonar...
+
+Model                                      Latency   Length   Tokens       Cost
+------------------------------------------------------------------------------
+xai/grok-4.20-non-reasoning              1.24s     1842    18+312  $0.00048
+google/gemini-3.1-flash-lite                      1.87s     2105    18+356  $0.00031
+perplexity/sonar                             2.13s     1654    18+280  $0.00034
+openai/gpt-5.4                               3.41s     2487    18+421  $0.00438
+anthropic/claude-sonnet-4-6                  3.78s     2301    18+389  $0.00527
+
+Comparison complete. 5 models evaluated.
+```
+
+Running with the fallback chain:
+
+```bash
+python model_comparison.py "Latest AI news" --fallback
+```
+
+```
+Prompt: Latest AI news
+
+Running model fallback chain...
+
+  Sending request with fallback chain: ['openai/gpt-5.4', ...]
+
+Fallback chain: openai/gpt-5.4 -> anthropic/claude-sonnet-4-6 -> google/gemini-3.1-flash-lite -> xai/grok-4.20-non-reasoning -> perplexity/sonar
+Model used:     openai/gpt-5.4
+Latency:        3.12s
+Response length: 2034 chars
+Cost:           $0.00415
+
+Preview: The AI landscape continues to evolve rapidly in 2025...
+```
+
+<Info>
+Model fallback is useful for production systems where availability matters more than model selection. The API tries each model in the `models` array in order and returns the first successful response. See the [model fallback guide](/docs/agent-api/model-fallback) for details.
+</Info>
+
+## Tips for Meaningful Comparisons
+
+1. **Use the same `max_output_tokens`** across all models to keep output lengths comparable.
+2. **Run multiple trials** and average the results, since latency can vary between requests due to load.
+3. **Test with representative prompts** for your actual use case rather than generic questions.
+4. **Consider cost per token** in addition to total cost, especially for high-volume applications.
+
+## Limitations
+
+- Latency measurements reflect end-to-end wall-clock time including network round trips, not pure model inference time.
+- Cost values come from the API response and reflect per-request pricing at the time of the call.
+- Response quality is subjective and not captured by quantitative metrics alone. Review the actual output text for qualitative evaluation.
+- Rate limits vary by model and provider. Sequential comparison requests may be affected by rate limiting on high-demand models.

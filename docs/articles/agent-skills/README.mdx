@@ -1,0 +1,304 @@
+---
+title: Daily AI Stock News PDF with Skills
+description: Generate a daily one-page AI-industry stock news PDF with the Agent API using the built-in office skill and an inline design skill.
+sidebar_position: 20
+keywords: [skills, office, pdf, inline-skills, design-system, agent-api, daily-report]
+products: [agent-api]
+categories: [sandbox, orchestration]
+---
+
+Build a repeatable end-of-day report for the AI-industry stocks you track. Each run produces a one-page PDF with today's prices, the day's moves, and the news that moved them — all rendered in your own house style.
+
+The recipe uses two skills:
+
+- **Built-in `office`** — the umbrella that lets the model pick the right document format (PDF, in this case).
+- **Inline `design-system`** — a request-scoped skill that carries your colors, fonts, and layout rules.
+
+See [Skills](/docs/agent-api/skills) for the full request schema and runtime behavior.
+
+## Prerequisites
+
+Install one SDK:
+
+- Python: `pip install perplexityai`
+- TypeScript: `npm install @perplexity-ai/perplexity_ai`
+
+If you do not have an API key yet:
+
+<Card title="Get your Perplexity API Key" icon="key" arrow="True" horizontal="True" iconType="solid" cta="Click here" href="https://perplexity.ai/account/api">
+Navigate to the **API Keys** tab in the API Portal and generate a new key.
+</Card>
+
+Export your API key:
+
+```bash
+export PERPLEXITY_API_KEY="your-api-key"
+```
+
+## Define the design skill
+
+The inline `design-system` skill tells the model how the report should look. Its `description` is the routing trigger — one line telling the model when to load it. The `instructions` carry the full design book.
+
+Keep the design book short and directive. The model reads it once, per request, and applies it while generating the document.
+
+```text
+Load when creating documents that must follow the house design book.
+
+Model: a 1970s letterpress broadsheet financial page. One ink, gray paper.
+
+Colors
+- Paper #EDE9DE; tinted boxes and alternating table rows #E3DFD2.
+- Body ink #232220 — soft, never hard black (ink spread on newsprint).
+- Headlines and rules may deepen to #141311; faded ink #5C5850 for captions and secondary text.
+- No second color anywhere. Up moves: bold with a ▲. Down moves: parentheses with a ▼.
+
+Typography
+- Body: low-contrast newspaper serif (Georgia, PT Serif, or Times), 9-10pt, justified and hyphenated.
+- Headlines: bold condensed serif with a smaller deck beneath.
+- Kickers and table headers: condensed grotesque caps (Franklin Gothic or Oswald), letterspaced.
+- Tables: agate style — 7-8pt condensed, tabular figures.
+
+Layout
+- One page, ~18mm margins.
+- Nameplate in blackletter or heavy serif, with a folio line (date, edition, price) set between an Oxford rule (thick over hairline).
+- Ticker summary as a boxed agate strip below the nameplate.
+- News timeline in 3-4 narrow justified columns divided by hairline column rules; each item opens with a bold caps dateline ('LONDON, JULY 17 —').
+- Data table ruled with hairlines only.
+- Pack the page — separate blocks with cutoff rules, not white space.
+
+Imagery
+- Grayscale halftone only, with a hairline keyline and an italic caption.
+
+Avoid
+- Second colors, gradients, shadows, rounded corners, sans-serif body text, and generous white space.
+```
+
+## Generate today's report
+
+Combine the `office` umbrella with the inline `design-system` skill. The prompt names the tickers and asks for today's move plus dated news tagged to the ticker each item moved.
+
+Skills run on the durable backend, so submit with `background: true` and poll `GET /v1/agent/{id}` until the status is terminal.
+
+<CodeGroup>
+```python Python
+import time
+from datetime import date
+from perplexity import Perplexity
+
+client = Perplexity()
+
+design_book = """
+Load when creating documents that must follow the house design book.
+
+Model: a 1970s letterpress broadsheet financial page. One ink, gray paper.
+
+Colors
+- Paper #EDE9DE; tinted boxes and alternating table rows #E3DFD2.
+- Body ink #232220 — soft, never hard black (ink spread on newsprint).
+- Headlines and rules may deepen to #141311; faded ink #5C5850 for captions and secondary text.
+- No second color anywhere. Up moves: bold with a ▲. Down moves: parentheses with a ▼.
+
+Typography
+- Body: low-contrast newspaper serif (Georgia, PT Serif, or Times), 9-10pt, justified and hyphenated.
+- Headlines: bold condensed serif with a smaller deck beneath.
+- Kickers and table headers: condensed grotesque caps (Franklin Gothic or Oswald), letterspaced.
+- Tables: agate style — 7-8pt condensed, tabular figures.
+
+Layout
+- One page, ~18mm margins.
+- Nameplate in blackletter or heavy serif, with a folio line (date, edition, price) set between an Oxford rule (thick over hairline).
+- Ticker summary as a boxed agate strip below the nameplate.
+- News timeline in 3-4 narrow justified columns divided by hairline column rules; each item opens with a bold caps dateline ('LONDON, JULY 17 —').
+- Data table ruled with hairlines only.
+- Pack the page — separate blocks with cutoff rules, not white space.
+
+Imagery
+- Grayscale halftone only, with a hairline keyline and an italic caption.
+
+Avoid
+- Second colors, gradients, shadows, rounded corners, sans-serif body text, and generous white space.
+"""
+
+response = client.responses.create(
+    preset="xhigh",
+    background=True,
+    skills=[
+        {
+            "type": "inline",
+            "name": "design-system",
+            "description": "Load when creating documents that must follow the house design book.",
+            "instructions": design_book,
+        },
+        {"type": "builtin", "name": "office"},
+    ],
+    input=(
+        f"Create a one-page PDF titled 'AI Stocks Daily' for {date.today():%Y-%m-%d}. "
+        "Cover NVDA, MSFT, GOOGL, AMD, AVGO, META, and TSM. For each ticker "
+        "include latest price and today's % change. Add a dated timeline of "
+        "today's key AI news, tag each item to the ticker it moved, and "
+        "finish with a data table (ticker, price, day change, week change). "
+        "Follow the design-system skill."
+    ),
+)
+
+while response.status not in ("completed", "failed", "cancelled", "incomplete"):
+    time.sleep(2)
+    response = client.responses.retrieve(response.id)
+
+print(f"Final status: {response.status}")
+
+if response.status == "completed":
+    files = client.responses.files.list(response.id)
+    for file in files.data:
+        content = client.responses.files.content(
+            file_id=file.id,
+            response_id=response.id,
+        )
+        content.write_to_file(file.filename)
+        print(f"Downloaded {file.filename} ({file.bytes} bytes)")
+```
+
+```typescript Typescript
+import Perplexity from '@perplexity-ai/perplexity_ai';
+import { writeFile } from 'node:fs/promises';
+
+const client = new Perplexity();
+
+const designBook = `
+Load when creating documents that must follow the house design book.
+
+Model: a 1970s letterpress broadsheet financial page. One ink, gray paper.
+
+Colors
+- Paper #EDE9DE; tinted boxes and alternating table rows #E3DFD2.
+- Body ink #232220 — soft, never hard black (ink spread on newsprint).
+- Headlines and rules may deepen to #141311; faded ink #5C5850 for captions and secondary text.
+- No second color anywhere. Up moves: bold with a ▲. Down moves: parentheses with a ▼.
+
+Typography
+- Body: low-contrast newspaper serif (Georgia, PT Serif, or Times), 9-10pt, justified and hyphenated.
+- Headlines: bold condensed serif with a smaller deck beneath.
+- Kickers and table headers: condensed grotesque caps (Franklin Gothic or Oswald), letterspaced.
+- Tables: agate style — 7-8pt condensed, tabular figures.
+
+Layout
+- One page, ~18mm margins.
+- Nameplate in blackletter or heavy serif, with a folio line (date, edition, price) set between an Oxford rule (thick over hairline).
+- Ticker summary as a boxed agate strip below the nameplate.
+- News timeline in 3-4 narrow justified columns divided by hairline column rules; each item opens with a bold caps dateline ('LONDON, JULY 17 —').
+- Data table ruled with hairlines only.
+- Pack the page — separate blocks with cutoff rules, not white space.
+
+Imagery
+- Grayscale halftone only, with a hairline keyline and an italic caption.
+
+Avoid
+- Second colors, gradients, shadows, rounded corners, sans-serif body text, and generous white space.
+`;
+
+const today = new Date().toISOString().slice(0, 10);
+
+let response = await client.responses.create({
+  preset: 'xhigh',
+  background: true,
+  skills: [
+    {
+      type: 'inline',
+      name: 'design-system',
+      description: 'Load when creating documents that must follow the house design book.',
+      instructions: designBook,
+    },
+    { type: 'builtin', name: 'office' },
+  ],
+  input:
+    `Create a one-page PDF titled 'AI Stocks Daily' for ${today}. ` +
+    'Cover NVDA, MSFT, GOOGL, AMD, AVGO, META, and TSM. For each ticker ' +
+    "include latest price and today's % change. Add a dated timeline of " +
+    "today's key AI news, tag each item to the ticker it moved, and " +
+    'finish with a data table (ticker, price, day change, week change). ' +
+    'Follow the design-system skill.',
+});
+
+while (!['completed', 'failed', 'cancelled', 'incomplete'].includes(response.status)) {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  response = await client.responses.retrieve(response.id);
+}
+
+console.log(`Final status: ${response.status}`);
+
+if (response.status === 'completed') {
+  const files = await client.responses.files.list(response.id);
+  for (const file of files.data) {
+    const content = await client.responses.files.content(file.id, {
+      response_id: response.id,
+    });
+    await writeFile(file.filename, Buffer.from(await content.arrayBuffer()));
+    console.log(`Downloaded ${file.filename} (${file.bytes} bytes)`);
+  }
+}
+```
+
+```bash cURL
+TODAY=$(date +%F)
+
+RESPONSE_ID=$(curl -s https://api.perplexity.ai/v1/agent \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"preset\": \"xhigh\",
+    \"background\": true,
+    \"skills\": [
+      {
+        \"type\": \"inline\",
+        \"name\": \"design-system\",
+        \"description\": \"Load when creating documents that must follow the house design book.\",
+        \"instructions\": \"Model: a 1970s letterpress broadsheet financial page. One ink, gray paper.\nColors: paper #EDE9DE (tinted boxes and alternating table rows #E3DFD2); body ink #232220 (soft, never hard black); headlines and rules may deepen to #141311; faded ink #5C5850 for captions. No second color. Up moves: bold + ▲; down moves: parentheses + ▼.\nTypography: body low-contrast newspaper serif (Georgia, PT Serif, or Times), 9-10pt, justified and hyphenated; headlines bold condensed serif with a smaller deck; kickers and table headers condensed grotesque caps (Franklin Gothic or Oswald), letterspaced; tables agate 7-8pt condensed with tabular figures.\nLayout: one page, ~18mm margins; blackletter or heavy-serif nameplate with a folio line (date, edition, price) between an Oxford rule (thick over hairline); boxed agate ticker strip below; news timeline in 3-4 narrow justified columns with hairline column rules, items opening with bold caps datelines ('LONDON, JULY 17 —'); data table ruled with hairlines only. Pack the page — cutoff rules, not padding.\nImagery: grayscale halftone with hairline keyline and italic caption.\nAvoid: second colors, gradients, shadows, rounded corners, sans body text, generous white space.\"
+      },
+      { \"type\": \"builtin\", \"name\": \"office\" }
+    ],
+    \"input\": \"Create a one-page PDF titled 'AI Stocks Daily' for $TODAY. Cover NVDA, MSFT, GOOGL, AMD, AVGO, META, and TSM. For each ticker include latest price and today's % change. Add a dated timeline of today's key AI news, tag each item to the ticker it moved, and finish with a data table (ticker, price, day change, week change). Follow the design-system skill.\"
+  }" | jq -r '.id')
+
+while true; do
+  STATUS=$(curl -s "https://api.perplexity.ai/v1/agent/$RESPONSE_ID" \
+    -H "Authorization: Bearer $PERPLEXITY_API_KEY" | jq -r '.status')
+  echo "Status: $STATUS"
+  [[ "$STATUS" == "completed" || "$STATUS" == "failed" || "$STATUS" == "cancelled" || "$STATUS" == "incomplete" ]] && break
+  sleep 2
+done
+
+FILE_ID=$(curl -s "https://api.perplexity.ai/v1/agent/$RESPONSE_ID/files" \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" | jq -r '.data[0].id')
+
+curl -s "https://api.perplexity.ai/v1/agent/$RESPONSE_ID/files/$FILE_ID/content" \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -o "ai-stocks-daily-$TODAY.pdf"
+```
+</CodeGroup>
+
+## What the response contains
+
+The completed response's `output` includes:
+
+- One `skill_loaded` item for `design-system` and one for the built-in `office/pdf` leaf the model loaded from the umbrella.
+- A `share_file` item pointing to the generated PDF. Download it with the response files endpoints, as shown in [Working with files](/docs/agent-api/working-with-files).
+
+## Run it every trading day
+
+Turn the snippet into a scheduled job (cron, Airflow, GitHub Actions) that runs after the US market closes. The design skill lives in your code, so the report stays visually consistent every day while the content updates itself.
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Skills" icon="graduation-cap" href="/docs/agent-api/skills">
+Full reference for the skills field, the built-in catalog, and inline skills.
+</Card>
+
+<Card title="Working with Files" icon="file" href="/docs/agent-api/working-with-files">
+List and download files an Agent API response produced in the sandbox.
+</Card>
+
+<Card title="Background Mode" icon="clock" href="/docs/agent-api/background-mode">
+Submit, poll, stream, and cancel long-running agent runs.
+</Card>
+</CardGroup>

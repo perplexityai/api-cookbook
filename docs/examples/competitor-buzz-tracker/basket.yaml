@@ -1,0 +1,36 @@
+# A "basket" describes one chart: the searches to run and the keyword rules
+# that classify each result. One result can match several keywords (e.g. an
+# article that mentions both Pixel and Galaxy counts for both).
+#
+# - title:    chart title.
+# - queries:  search queries run from the sandbox; results are pooled and
+#             deduplicated by URL. More queries -> broader coverage.
+# - keywords: each is a name plus one case-insensitive regex (use | for
+#             alternatives); a result matches if the pattern is found in its
+#             title, snippet, or URL.
+title: "iPhone vs Pixel vs Galaxy — market buzz"
+
+queries:
+  - "smartphone news today"
+  - "latest phone news"
+  - "new phone launch"
+  - "smartphone announcements"
+  - "flagship smartphone news"
+  - "Android phone news"
+  - "new phone releases"
+  - "phone review roundup"
+  - "best new phones"
+  - "upcoming smartphones"
+  - "foldable phone news"
+  - "budget phone news"
+  - "phone camera comparison"
+  - "smartphone deals this week"
+  - "mobile phone industry news"
+
+keywords:
+  - name: iPhone
+    regex: "iphone|apple phone"
+  - name: Pixel
+    regex: "pixel"
+  - name: Galaxy
+    regex: "galaxy|samsung"
