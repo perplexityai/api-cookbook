@@ -1,0 +1,9 @@
+.DS_Store
+.env
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+.coverage
+.artifacts/
+dist/

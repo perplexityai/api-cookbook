@@ -1,0 +1,9 @@
+# Public figures are tutorial identities, not claimed Perplexity customers.
+# The three public identities were verified with live People Search on 2026-08-31.
+# demo-004 is intentionally ambiguous; demo-005 is intentionally fictitious.
+customer_id,full_name,company,title,location,known_profile_url,is_demo
+demo-001,Bill Gates,Gates Foundation,"Chair, Board Member",Seattle WA,https://www.gatesfoundation.org/about/leadership/bill-gates,1
+demo-002,Tim Cook,Apple,Executive,Cupertino CA,https://www.apple.com/leadership/tim-cook/,1
+demo-003,Mark Zuckerberg,Meta,"Founder, Chairman and CEO",Menlo Park CA,https://about.fb.com/news/tag/mark-zuckerberg/,1
+demo-004,Michael Lee,Google,,,,1
+demo-005,Maren Quill,Northstar Quantum Labs,,,,1

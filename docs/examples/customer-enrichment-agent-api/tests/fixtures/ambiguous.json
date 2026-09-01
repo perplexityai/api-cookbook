@@ -1,0 +1,30 @@
+[
+  {
+    "id": "resp_fixture_ambiguous_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [{"type": "function_call", "name": "get_customer", "call_id": "call_get_a", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"}]
+  },
+  {
+    "id": "resp_fixture_ambiguous_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "people_search_results",
+        "queries": ["Alex Kim Acme", "Alex Kim Acme Product Manager"],
+        "results": [
+          {"id": "person-a1", "url": "https://example.com/public/alex-kim-1", "title": "Alex Kim", "snippet": "Product leader with an Acme reference.", "source": "web"},
+          {"id": "person-a2", "url": "https://example.org/public/alex-kim-2", "title": "Alex Kim", "snippet": "Product manager whose company cannot be confirmed.", "source": "web"}
+        ]
+      },
+      {
+        "type": "function_call",
+        "name": "save_customer_enrichment",
+        "call_id": "call_save_a",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"ambiguous\",\"matched_name\":null,\"current_title\":null,\"current_company\":null,\"location\":null,\"selected_source_result_id\":null,\"supporting_source_result_ids\":[\"person-a1\",\"person-a2\"],\"match_explanation\":\"Two public profiles share the customer name and neither independently confirms enough fields.\"}"
+      }
+    ]
+  },
+  {"id": "resp_fixture_ambiguous_3", "model": "perplexity/glm-5.3", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": []}]}
+]

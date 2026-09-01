@@ -1,0 +1,18 @@
+[
+  {
+    "id": "resp_fixture_not_found_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [{"type": "function_call", "name": "get_customer", "call_id": "call_get_n", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"}]
+  },
+  {
+    "id": "resp_fixture_not_found_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {"type": "people_search_results", "queries": ["Maren Quill Northstar Quantum Labs"], "results": []},
+      {"type": "function_call", "name": "save_customer_enrichment", "call_id": "call_save_n", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"not_found\",\"matched_name\":null,\"current_title\":null,\"current_company\":null,\"location\":null,\"selected_source_result_id\":null,\"supporting_source_result_ids\":[],\"match_explanation\":\"People Search returned no profile with the supplied name and company.\"}"}
+    ]
+  },
+  {"id": "resp_fixture_not_found_3", "model": "perplexity/glm-5.3", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": []}]}
+]

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "resp_fixture_duplicate_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [{"type": "function_call", "name": "get_customer", "call_id": "call_get_d", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"}]
+  },
+  {
+    "id": "resp_fixture_duplicate_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {"type": "people_search_results", "queries": ["Bill Gates Gates Foundation"], "results": [{"id": "person-d1", "url": "https://example.com/public/profile", "title": "Bill Gates", "snippet": "Chair of the Gates Foundation.", "source": "web"}]},
+      {"type": "function_call", "name": "save_customer_enrichment", "call_id": "call_save_d1", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":\"Chair, Board Member\",\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"person-d1\",\"supporting_source_result_ids\":[\"person-d1\"],\"match_explanation\":\"Name and company match.\"}"},
+      {"type": "function_call", "name": "save_customer_enrichment", "call_id": "call_save_d2", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":\"Chair, Board Member\",\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"person-d1\",\"supporting_source_result_ids\":[\"person-d1\"],\"match_explanation\":\"Repeated save attempt.\"}"}
+    ]
+  },
+  {"id": "resp_fixture_duplicate_3", "model": "perplexity/glm-5.3", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": []}]}
+]

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "resp_fixture_url_fix_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "function_call",
+        "name": "get_customer",
+        "call_id": "call_get_url_fix",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"
+      }
+    ]
+  },
+  {
+    "id": "resp_fixture_url_fix_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "people_search_results",
+        "queries": ["Bill Gates Gates Foundation"],
+        "results": [
+          {
+            "id": "official",
+            "url": "https://www.gatesfoundation.org/about/leadership/bill-gates",
+            "title": "Bill Gates - Gates Foundation",
+            "snippet": "Bill Gates is Chair and a Board Member.",
+            "source": "web"
+          },
+          {
+            "id": "tainted",
+            "url": "https://example.com/bill-gates*",
+            "title": "Markup-tainted result",
+            "source": "web"
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "name": "save_customer_enrichment",
+        "call_id": "call_save_url_bad",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":\"Chair, Board Member\",\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"official\",\"supporting_source_result_ids\":[\"tainted\"],\"match_explanation\":\"Name and company match.\"}"
+      }
+    ]
+  },
+  {
+    "id": "resp_fixture_url_fix_3",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "function_call",
+        "name": "save_customer_enrichment",
+        "call_id": "call_save_url_fixed",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":\"Chair, Board Member\",\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"official\",\"supporting_source_result_ids\":[],\"match_explanation\":\"Name, company, and official profile match.\"}"
+      }
+    ]
+  },
+  {
+    "id": "resp_fixture_url_fix_4",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "Saved after correction."}]
+      }
+    ]
+  }
+]

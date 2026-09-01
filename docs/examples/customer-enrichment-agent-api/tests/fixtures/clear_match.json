@@ -1,0 +1,48 @@
+[
+  {
+    "id": "resp_fixture_clear_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "function_call",
+        "name": "get_customer",
+        "call_id": "call_get_1",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"
+      }
+    ]
+  },
+  {
+    "id": "resp_fixture_clear_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {
+        "type": "people_search_results",
+        "queries": ["Bill Gates Gates Foundation"],
+        "results": [
+          {
+            "id": "person-101",
+            "url": "https://www.gatesfoundation.org/about/leadership/bill-gates",
+            "title": "Bill Gates - Gates Foundation",
+            "snippet": "Bill Gates is Chair and a Board Member of the Gates Foundation.",
+            "source": "web",
+            "last_updated": "2026-08-01"
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "name": "save_customer_enrichment",
+        "call_id": "call_save_1",
+        "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":\"Chair, Board Member\",\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"person-101\",\"supporting_source_result_ids\":[\"person-101\"],\"match_explanation\":\"The name and Gates Foundation company match the source customer fields.\"}"
+      }
+    ]
+  },
+  {
+    "id": "resp_fixture_clear_3",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Saved."}]}]
+  }
+]

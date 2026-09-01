@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "customer-enrichment-agent-api"
+version = "0.1.0"
+description = "A source-backed customer enrichment tutorial using Perplexity Agent API and ClickHouse"
+readme = { file = "README.mdx", content-type = "text/markdown" }
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+dependencies = [
+  "clickhouse-connect==1.7.2",
+  "perplexityai==0.43.5",
+  "pydantic==2.13.5",
+  "python-dotenv==1.2.3",
+  "rich==15.0.0",
+  "typer==0.27.2",
+]
+
+[project.scripts]
+customer-enrichment = "customer_enrichment.cli:app"
+
+[dependency-groups]
+dev = ["pytest==9.1.1"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/customer_enrichment"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+markers = ["live: opt-in tests that call the live Agent API"]

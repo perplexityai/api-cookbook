@@ -11,6 +11,7 @@ Ready-to-run applications demonstrating real-world use cases:
 
 - **[Equity Research Brief](docs/examples/equity-research-brief/)** - Agent API + `finance_search` for ticker-level research briefs
 - **[Finance Chart (Sandbox)](docs/examples/finance-chart-sandbox/)** - Agent API + `finance_search` + `sandbox` to chart a stock's price history
+- **[Customer Enrichment with ClickHouse](docs/examples/customer-enrichment-agent-api/)** - Agent API + `people_search` + custom functions with append-only provenance
 - **[Fact Checker CLI](docs/examples/fact-checker-cli/)** - Verify claims and articles for accuracy
 - **[Daily Knowledge Bot](docs/examples/daily-knowledge-bot/)** - Automated daily fact delivery system  
 - **[Disease Information App](docs/examples/disease-qa/)** - Interactive medical information lookup

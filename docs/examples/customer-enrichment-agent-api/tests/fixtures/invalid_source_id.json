@@ -1,0 +1,18 @@
+[
+  {
+    "id": "resp_fixture_invalid_1",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [{"type": "function_call", "name": "get_customer", "call_id": "call_get_i", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\"}"}]
+  },
+  {
+    "id": "resp_fixture_invalid_2",
+    "model": "perplexity/glm-5.3",
+    "status": "completed",
+    "output": [
+      {"type": "people_search_results", "queries": ["Bill Gates Gates Foundation"], "results": [{"id": "person-valid", "url": "https://example.com/public/valid", "title": "Public profile", "snippet": "Name and company match.", "source": "web"}]},
+      {"type": "function_call", "name": "save_customer_enrichment", "call_id": "call_save_i", "arguments": "{\"customer_id\":\"__CUSTOMER_ID__\",\"status\":\"matched\",\"matched_name\":\"Bill Gates\",\"current_title\":null,\"current_company\":\"Gates Foundation\",\"location\":null,\"selected_source_result_id\":\"fabricated-id\",\"supporting_source_result_ids\":[],\"match_explanation\":\"Attempted stale evidence.\"}"}
+    ]
+  },
+  {"id": "resp_fixture_invalid_3", "model": "perplexity/glm-5.3", "status": "completed", "output": [{"type": "message", "role": "assistant", "content": []}]}
+]

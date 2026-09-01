@@ -15,6 +15,29 @@ Navigate to any example directory and follow the instructions in the README.md f
 
 ## 📋 Available Examples
 
+### 👤 [Customer Enrichment with ClickHouse](customer-enrichment-agent-api/)
+
+**Purpose**: Enrich customer records with validated public professional evidence
+
+**Type**: Python command-line tutorial
+
+**Use Cases**: CRM enrichment, identity disambiguation, source-backed data pipelines
+
+**Key Features**:
+- Uses the Agent API's built-in `people_search` tool with two custom functions
+- Reads source records and appends provenance to local ClickHouse
+- Validates every model-selected result ID against structured tool output
+- Includes deterministic fixtures and an opt-in live smoke test
+
+**Quick Start**:
+```bash
+cd customer-enrichment-agent-api/
+uv sync --frozen
+docker compose up -d
+```
+
+---
+
 ### 🔍 [Fact Checker CLI](fact-checker-cli/)
 
 **Purpose**: Verify claims and articles for factual accuracy  
@@ -172,6 +195,7 @@ Additional requirements vary by example and are listed in each `requirements.txt
 | Track financial markets | **Financial News Tracker** |
 | Generate an equity research brief | **Equity Research Brief** |
 | Research academic topics | **Academic Research Finder** |
+| Enrich customer records with validated sources | **Customer Enrichment with ClickHouse** |
 
 ## 🤝 Contributing
 
