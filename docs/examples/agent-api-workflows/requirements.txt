@@ -1,0 +1,2 @@
+perplexityai==0.43.5
+slack-bolt==1.27.0

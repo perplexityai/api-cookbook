@@ -1,0 +1,232 @@
+---
+title: "Build a channel-scoped Slack agent"
+sidebarTitle: "Slack channel agent"
+description: "Connect Agent API to Slack mentions with thread history, recent-message search, progress updates, and cancellation."
+products: [agent-api]
+categories: [function-calling, integrations, memory]
+---
+
+Build a Python Slack bot that answers mentions using recent messages in the triggering channel.
+It saves one transcript per workspace, channel, and thread.
+Follow-up mentions enter a queue; they do not steer an active model response.
+
+[View the runnable source](https://github.com/perplexityai/api-cookbook/blob/main/docs/examples/agent-api-workflows/slack_bot.py).
+
+## Prerequisites
+
+Use Python 3.12 or later and a [Perplexity API key](https://console.perplexity.ai).
+Requests incur API usage charges.
+The examples use `openai/gpt-5.6-sol`; set `AGENT_MODEL` to choose another compatible model in the Python apps.
+
+Clone the source and install its pinned dependencies:
+
+```bash
+git clone https://github.com/perplexityai/api-cookbook.git
+cd api-cookbook/docs/examples/agent-api-workflows
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+export PERPLEXITY_API_KEY="YOUR_API_KEY"
+```
+
+## Configure Slack
+
+Create a Slack app from the included [manifest](https://github.com/perplexityai/api-cookbook/blob/main/docs/examples/agent-api-workflows/slack-app-manifest.json).
+The app uses [Socket Mode](https://docs.slack.dev/tools/bolt-python/concepts/socket-mode/), so it does not need a public HTTP endpoint.
+
+1. Install the app in your test workspace.
+2. Copy its bot token with `app_mentions:read`, `chat:write`, `channels:history`, and `groups:history` scopes.
+3. Create an app-level token with `connections:write`.
+4. Invite the bot to a test channel and copy that channel's ID.
+5. Set the credentials and an explicit comma-separated channel allowlist.
+
+```bash
+export SLACK_BOT_TOKEN="YOUR_BOT_TOKEN"
+export SLACK_APP_TOKEN="YOUR_APP_TOKEN"
+export SLACK_CHANNEL_IDS="C0123456789"
+python slack_bot.py
+```
+
+Keep both Slack tokens on the host.
+Do not put them in prompts or commit them to source control.
+Channel messages used as evidence are sent to the model and retained in the local transcript.
+
+## Ask, follow up, and stop
+
+Post a test message in the allowed channel:
+
+```text
+Launch decision: ship Friday after the security review. Owner: Alex.
+```
+
+Mention the bot:
+
+```text
+@Channel Analyst Find the launch decision and link to the source message.
+```
+
+The host posts a progress message in the same thread, then updates it with the answer.
+The search tool returns message permalinks from Slack.
+Check that the answer cites a returned link and states any missing evidence.
+
+In the same thread, mention the bot again:
+
+```text
+@Channel Analyst Who owns that launch?
+```
+
+The bot loads the saved transcript from `.state/slack.sqlite`.
+A mention in another thread starts a separate conversation.
+Messages without a bot mention do not trigger a run.
+
+To stop work already queued or active in that thread:
+
+```text
+@Channel Analyst stop
+```
+
+The worker skips cancelled queue entries and requests cancellation of the active background response.
+It does not execute further custom functions after observing the stop signal.
+A later mention starts fresh work from the last saved transcript.
+Cancellation is not instantaneous and cannot undo a tool operation that already finished.
+
+## Inspect the access boundary
+
+The host obtains the workspace and bot IDs from Slack's authenticated identity.
+It rejects events from other workspaces, channels outside `SLACK_CHANNEL_IDS`, and bots.
+The `search_channel` tool accepts only a search query; the host binds its channel from the verified event.
+
+Search scans up to 100 recent top-level messages returned by Slack and returns up to 20 literal, case-insensitive matches.
+It excludes bot messages and does not search thread replies or the entire workspace.
+Actual page size and availability depend on Slack permissions and rate limits.
+Use `*` as the search query for recent messages.
+
+## Inspect the API request
+
+This standalone request asks for a custom function call.
+It does not execute the function or run the complete application.
+Inspect the `function_call` item in `output`, including its `name`, `arguments`, and `call_id`.
+The linked Python app implements the host-side validation and continuation.
+
+Install `perplexityai` for Python, `@perplexity-ai/perplexity_ai` for TypeScript, or `curl` and `jq` for cURL.
+All three examples read `PERPLEXITY_API_KEY`.
+
+<CodeGroup>
+
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+response = client.responses.create(
+    model="openai/gpt-5.6-sol",
+    input="Call search_channel with query launch to find the channel launch decision.",
+    max_output_tokens=800,
+    tools=[{
+        "type": "function",
+        "name": "search_channel",
+        "description": "Search recent top-level messages in the host-bound channel.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "query"
+            ],
+            "additionalProperties": False
+        },
+        "strict": True
+    }],
+)
+print(response.model_dump_json(indent=2))
+```
+
+```typescript Typescript
+import Perplexity from "@perplexity-ai/perplexity_ai";
+
+const client = new Perplexity();
+const response = await client.responses.create({
+  "model": "openai/gpt-5.6-sol",
+  "input": "Call search_channel with query launch to find the channel launch decision.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "search_channel",
+      "description": "Search recent top-level messages in the host-bound channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+});
+console.log(JSON.stringify(response, null, 2));
+```
+
+```bash cURL
+curl --fail-with-body https://api.perplexity.ai/v1/agent \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "openai/gpt-5.6-sol",
+  "input": "Call search_channel with query launch to find the channel launch decision.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "search_channel",
+      "description": "Search recent top-level messages in the host-bound channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+}' | jq
+```
+
+</CodeGroup>
+
+## Verify and extend
+
+```bash
+python -m unittest -v test_workflows
+python smoke_live.py
+```
+
+The unit checks cover workspace/channel isolation, duplicate events, follow-up history, queued stop, and active cancellation.
+The live smoke check uses the real Agent API with a simulated Slack transport.
+It does not install the Slack app or send a real Slack message.
+Complete the mention, follow-up, and stop checks above in your test workspace to validate the full integration.
+
+The demo runs one worker for all threads and holds at most 100 queued mentions.
+Completed transcript checkpoints and event IDs persist, but the queue and active response ID do not survive a process restart.
+Send a new mention to retry interrupted work.
+For durable delivery, replace the in-memory queue with a durable worker and reconcile delivery state before retrying Slack writes.
+
+The bot does not execute code or expose additional workplace connectors.
+It does not claim exactly-once message delivery or multi-process coordination.
+Add those capabilities only with explicit access scopes and corresponding integration tests.
+
+Continue with [custom functions](/docs/agent-api/tools/custom-functions) or [conversation state](/docs/agent-api/conversation-state).
