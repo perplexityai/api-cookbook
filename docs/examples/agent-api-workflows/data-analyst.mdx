@@ -1,0 +1,238 @@
+---
+title: "Build a data analyst with read-only SQL"
+sidebarTitle: "Read-only data analyst"
+description: "Use Agent API function calls to inspect a SQLite dataset, explain a metric change, and retain explicit corrections."
+products: [agent-api]
+categories: [function-calling, memory]
+---
+
+Build a Python analyst that discovers tables, reads metric definitions, executes read-only SQL, and answers follow-up questions.
+The included dataset is synthetic and needs no external database.
+Your application owns the database access, conversation history, and saved corrections.
+
+[View the runnable source](https://github.com/perplexityai/api-cookbook/blob/main/docs/examples/agent-api-workflows/data_analyst.py).
+
+## Prerequisites
+
+Use Python 3.12 or later and a [Perplexity API key](https://console.perplexity.ai).
+Requests incur API usage charges.
+The examples use `openai/gpt-5.6-sol`; set `AGENT_MODEL` to choose another compatible model in the Python apps.
+
+Clone the source and install its pinned dependencies:
+
+```bash
+git clone https://github.com/perplexityai/api-cookbook.git
+cd api-cookbook/docs/examples/agent-api-workflows
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+export PERPLEXITY_API_KEY="YOUR_API_KEY"
+```
+
+## Investigate the demo
+
+```bash
+python data_analyst.py --demo \
+  "Why did paid conversion fall between the two recorded weeks? Show the SQL and segment contributions."
+```
+
+The first command creates `.state/demo.sqlite`.
+Omit `--demo` on later runs; it refuses to overwrite an existing database.
+The JSON result contains `answer`, `queries`, and `conversation`.
+Each query includes its SQL, column names, returned rows, and a truncation flag.
+
+Verify the answer against these fixed inputs:
+
+| Segment | Signups each week | Paid, first week | Paid, second week |
+| --- | ---: | ---: | ---: |
+| Self-service | 900 | 80 | 42 |
+| Enterprise | 100 | 20 | 18 |
+| Total | 1,000 | 100 | 60 |
+
+Overall conversion changes from 10% to 6%.
+Self-service accounts for 38 of the 40 fewer paid conversions.
+The dataset explains the numerical contribution, not its operational cause.
+
+## Continue and save a correction
+
+The default conversation persists in `.state/analyst.sqlite`.
+Ask a follow-up in a new process:
+
+```bash
+python data_analyst.py "What share of the decline came from self-service?"
+```
+
+Use `--conversation another-investigation` to start a separate transcript.
+Corrections are shared across conversations for the same database path.
+Save one explicitly, without a model request:
+
+```bash
+python data_analyst.py --remember \
+  "Always show self-service separately in the executive summary."
+python data_analyst.py --conversation executive-summary \
+  "Compare the two weeks and apply my saved reporting preference."
+```
+
+The model cannot write corrections itself.
+Only the operator's `--remember` command can change this memory.
+
+## Use your own SQLite database
+
+Pass a local database and a reviewed JSON file of metric definitions:
+
+```bash
+python data_analyst.py --database /path/to/warehouse.sqlite \
+  --context /path/to/metric-definitions.json \
+  --conversation weekly-review \
+  "Compare conversion for the two latest complete weeks."
+```
+
+For example, the context file can contain:
+
+```json
+{
+  "source": "Your approved analytics snapshot",
+  "conversion": "SUM(paid) / SUM(signups)",
+  "reporting_rule": "Exclude incomplete weeks."
+}
+```
+
+Use a snapshot that the operator is allowed to read.
+Schema, query results, and supplied context are sent to the model.
+The local state file stores this transcript; apply your own retention policy.
+
+## Inspect the API request
+
+This standalone request asks for a custom function call.
+It does not execute the function or run the complete application.
+Inspect the `function_call` item in `output`, including its `name`, `arguments`, and `call_id`.
+The linked Python app implements the host-side validation and continuation.
+
+Install `perplexityai` for Python, `@perplexity-ai/perplexity_ai` for TypeScript, or `curl` and `jq` for cURL.
+All three examples read `PERPLEXITY_API_KEY`.
+
+<CodeGroup>
+
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+response = client.responses.create(
+    model="openai/gpt-5.6-sol",
+    input="Call search_tables with query * to inspect the available tables.",
+    max_output_tokens=800,
+    tools=[{
+        "type": "function",
+        "name": "search_tables",
+        "description": "Read table names and schemas.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "query"
+            ],
+            "additionalProperties": False
+        },
+        "strict": True
+    }],
+)
+print(response.model_dump_json(indent=2))
+```
+
+```typescript Typescript
+import Perplexity from "@perplexity-ai/perplexity_ai";
+
+const client = new Perplexity();
+const response = await client.responses.create({
+  "model": "openai/gpt-5.6-sol",
+  "input": "Call search_tables with query * to inspect the available tables.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "search_tables",
+      "description": "Read table names and schemas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+});
+console.log(JSON.stringify(response, null, 2));
+```
+
+```bash cURL
+curl --fail-with-body https://api.perplexity.ai/v1/agent \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "openai/gpt-5.6-sol",
+  "input": "Call search_tables with query * to inspect the available tables.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "search_tables",
+      "description": "Read table names and schemas.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+}' | jq
+```
+
+</CodeGroup>
+
+## Follow the function loop
+
+In `data_analyst.py`, `search_tables` returns actual schemas, `search_context` returns reviewed definitions and corrections, and `query_warehouse` executes SQL.
+In `agent_loop.py`, each completed response is checked before the host dispatches registered functions.
+The next request includes the transcript and matching `function_call_output` items.
+Assistant messages are replayed as text to match the pinned Python SDK's input schema.
+
+The loop uses background requests and polls their status.
+It stores checkpoints locally and stops after 12 model requests per user question.
+It does not require a persistent hosted sandbox or a hosted approval policy.
+
+## Verify and extend
+
+```bash
+python -m unittest -v test_workflows
+python smoke_live.py
+```
+
+The unit checks reject writes, `ATTACH`, `PRAGMA`, extension loading, and multiple SQL statements.
+Queries have a three-second execution budget and return at most 100 rows.
+The live check makes paid API requests using synthetic data and writes request/response proof to `.state/live-proof.json`.
+
+This is a single-operator SQLite example, not a PostgreSQL driver or a database access-control service.
+Read-only access is enforced by the connection and SQLite authorizer, not by the prompt.
+Before connecting a shared warehouse, use its read-only credentials, tenant and table permissions, query limits, and audited result handling.
+For long conversations, add an explicit retention or summarization policy; this example replays the full transcript.
+
+Continue with [custom functions](/docs/agent-api/tools/custom-functions) or [background mode](/docs/agent-api/background-mode).
