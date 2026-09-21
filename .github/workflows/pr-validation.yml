@@ -30,7 +30,8 @@ jobs:
         run: |
           # Simple check for common broken link patterns
           echo "Checking for potential broken links..."
-          if grep -r "http://localhost\|http://127.0.0.1" docs/ --exclude-dir=showcase; then
+          # Flag Markdown links to localhost, not mentions in code comments or prose.
+          if grep -rE "\]\(http://(localhost|127\.0\.0\.1)" docs/; then
             echo "❌ Found localhost links that should be removed"
             exit 1
           fi
