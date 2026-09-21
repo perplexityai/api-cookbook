@@ -1,0 +1,135 @@
+name: Submit a showcase project
+description: Get your Agent API, Search API, or Embeddings API project listed in the Perplexity cookbook gallery.
+title: "[Showcase] "
+labels: ["showcase-submission"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for building with the Perplexity API. Fill this in and a maintainer will turn it into a page in the cookbook gallery. You do not need to write any MDX.
+
+        Projects must use the Agent API, Search API, or Embeddings API. Sonar-only projects are not accepted; Sonar shuts down on 2026-09-27.
+
+  - type: input
+    id: name
+    attributes:
+      label: Project name
+      placeholder: e.g. Briefing Bot
+    validations:
+      required: true
+
+  - type: input
+    id: slug
+    attributes:
+      label: URL slug
+      description: Lowercase letters, digits, and hyphens. This becomes docs.perplexity.ai/docs/cookbook/showcase/<slug>.
+      placeholder: briefing-bot
+    validations:
+      required: true
+
+  - type: input
+    id: description
+    attributes:
+      label: One-sentence description
+      description: Under 160 characters. What it does and who it is for.
+    validations:
+      required: true
+
+  - type: input
+    id: repo
+    attributes:
+      label: Public repository URL
+      placeholder: https://github.com/you/project
+    validations:
+      required: true
+
+  - type: input
+    id: demo
+    attributes:
+      label: Live demo URL (optional)
+      placeholder: https://project.example
+
+  - type: dropdown
+    id: products
+    attributes:
+      label: Which Perplexity APIs does it use?
+      multiple: true
+      options:
+        - agent-api
+        - search-api
+        - embeddings-api
+    validations:
+      required: true
+
+  - type: dropdown
+    id: categories
+    attributes:
+      label: Categories (pick up to 3)
+      multiple: true
+      options:
+        - finance
+        - people
+        - sandbox
+        - multimodal
+        - rag
+        - deep-research
+        - structured-outputs
+        - function-calling
+        - streaming
+        - memory
+        - search-filtering
+        - orchestration
+        - integrations
+        - mcp
+
+  - type: input
+    id: keywords
+    attributes:
+      label: Keywords
+      description: 3 to 8, comma separated, lowercase.
+      placeholder: research, briefs, citations, slack
+    validations:
+      required: true
+
+  - type: input
+    id: screenshot
+    attributes:
+      label: Screenshot URL (optional)
+      description: An https image URL you control. You can also attach an image in the comments and a maintainer will move it.
+      placeholder: https://your-domain.example/screenshot.png
+
+  - type: input
+    id: video
+    attributes:
+      label: YouTube video URL (optional)
+      placeholder: https://www.youtube.com/watch?v=...
+
+  - type: textarea
+    id: about
+    attributes:
+      label: What does it do?
+      description: Two or three short paragraphs. Plain text or basic Markdown (bold, links, lists). HTML and code are removed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: api_usage
+    attributes:
+      label: How does it use the Perplexity API?
+      description: Which API and which features (web search, finance_search, sandbox, structured outputs, profiles, and so on). Plain text or basic Markdown.
+    validations:
+      required: true
+
+  - type: input
+    id: author
+    attributes:
+      label: Built by (optional)
+      description: Name or handle, and how people can reach you.
+
+  - type: checkboxes
+    id: rights
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have the right to publish every image and description in this submission, and the project uses a current Perplexity API (not Sonar).
+          required: true

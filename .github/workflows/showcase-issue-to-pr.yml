@@ -1,0 +1,103 @@
+name: Showcase issue to PR
+
+# A maintainer applies the "showcase-approved" label to a "Submit a showcase
+# project" issue. This job turns the form into docs/showcase/<slug>.mdx,
+# validates it, and opens a PR that closes the issue.
+#
+# Runs in the base repo on a label event, never on untrusted PR code. The
+# issue body is treated as data: scripts/showcase-from-issue.js strips HTML,
+# JSX, imports, and code before anything is written.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: showcase-issue-${{ github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  create-pr:
+    if: github.event.label.name == 'showcase-approved' && contains(github.event.issue.labels.*.name, 'showcase-submission')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Optional: a GitHub App token lets this job open PRs even when the org
+      # blocks GITHUB_TOKEN from creating pull requests. Set the repository
+      # variable SHOWCASE_APP_ID and secret SHOWCASE_APP_PRIVATE_KEY to enable.
+      - name: Mint app token
+        id: app
+        if: vars.SHOWCASE_APP_ID != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.SHOWCASE_APP_ID }}
+          private-key: ${{ secrets.SHOWCASE_APP_PRIVATE_KEY }}
+
+      - name: Generate showcase page from issue
+        id: gen
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          file=$(node scripts/showcase-from-issue.js)
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+          echo "slug=$(basename "$file" .mdx)" >> "$GITHUB_OUTPUT"
+
+      - name: Validate
+        run: |
+          node scripts/validate-showcase.js "${{ steps.gen.outputs.file }}"
+          node scripts/validate-mdx.js
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          SLUG: ${{ steps.gen.outputs.slug }}
+          FILE: ${{ steps.gen.outputs.file }}
+          AUTHOR: ${{ github.event.issue.user.login }}
+        run: |
+          set -euo pipefail
+          branch="showcase/${SLUG}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add "$FILE"
+          git commit -m "Add showcase: ${SLUG}
+
+          Generated from issue #${ISSUE} submitted by @${AUTHOR}."
+          git push --force-with-lease origin "$branch"
+
+          if gh pr list --head "$branch" --state open --json number --jq 'length' | grep -q '^0$'; then
+            gh pr create --draft --base main --head "$branch" \
+              --title "Add showcase: ${SLUG}" \
+              --body "Generated from #${ISSUE} (submitted by @${AUTHOR}).
+
+          Review the page, edit on this branch if needed, then mark ready and merge. Merging syncs the page to docs.perplexity.ai.
+
+          Closes #${ISSUE}"
+          fi
+          gh issue comment "$ISSUE" --body "Thanks @${AUTHOR}. A maintainer approved this submission and a pull request was opened from it: $(gh pr list --head "$branch" --state open --json url --jq '.[0].url'). Once it merges, the page appears on docs.perplexity.ai within a day."
+
+      - name: Report failure on the issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          gh issue comment "$ISSUE" --body "The automated conversion of this submission failed. A maintainer will take a look. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          gh issue edit "$ISSUE" --remove-label showcase-approved
