@@ -1,39 +1,20 @@
-## Description
-Brief description of your contribution
+## Showcase project
 
-## Type of Contribution
-- [ ] Example Tutorial
-- [ ] Showcase Project
-- [ ] Article/Integration Guide
-- [ ] Documentation Update
-- [ ] Bug Fix
-- [ ] Other (please describe)
+**Project name:**
+
+**Repository or live URL:**
+
+**Which Perplexity API does it use?** (Agent API, Search API, Embeddings API)
+
+**One sentence on what it does:**
 
 ## Checklist
-- [ ] My code follows the cookbook's style guidelines
-- [ ] I have included comprehensive documentation
-- [ ] I have tested my code and it works as expected
-- [ ] I have included all necessary dependencies and setup instructions
-- [ ] My MDX file includes proper frontmatter (title, description, keywords)
-- [ ] I have linked to any external repositories or live demos
 
-## Project Details
-**What problem does this solve?**
-<!-- Describe the problem or use case your contribution addresses -->
+- [ ] The file is at `docs/showcase/<slug>.mdx` and follows the template in CONTRIBUTING.md
+- [ ] `products` lists only `agent-api`, `search-api`, or `embeddings-api`
+- [ ] Images are https URLs or committed under `static/showcase/<slug>/`
+- [ ] No imports, scripts, or embeds other than a YouTube iframe
+- [ ] I have the right to publish every image and description in this page
 
-**What makes this contribution valuable to other developers?**
-<!-- Explain why this would be helpful to others using the Perplexity Sonar API -->
+## Anything else reviewers should know
 
-**External Links (if applicable):**
-- GitHub Repository: 
-- Live Demo: 
-- Blog Post/Article: 
-
-## Testing
-<!-- Describe how you tested your contribution -->
-
-## Screenshots (if applicable)
-<!-- Add screenshots to help explain your contribution -->
-
-## Additional Notes
-<!-- Any additional information that might be helpful for reviewers --> 
