@@ -1,5 +1,5 @@
 name: Submit a showcase project
-description: Get your Agent API, Search API, or Embeddings API project listed in the Perplexity cookbook gallery.
+description: Get your Agent API, Search API, Embeddings API, or Decisions API project listed in the Perplexity cookbook gallery.
 title: "[Showcase] "
 labels: ["showcase-submission"]
 body:
@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for building with the Perplexity API. Fill this in and a maintainer will turn it into a page in the cookbook gallery. You do not need to write any MDX.
 
-        Projects must use the Agent API, Search API, or Embeddings API. Sonar-only projects are not accepted; Sonar shuts down on 2026-09-27.
+        Projects must use the Agent API, Search API, Embeddings API, or Decisions API. Sonar-only projects are not accepted.
 
   - type: input
     id: name
@@ -58,6 +58,7 @@ body:
         - agent-api
         - search-api
         - embeddings-api
+        - decisions-api
     validations:
       required: true
 

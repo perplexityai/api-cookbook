@@ -16,7 +16,7 @@ import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
 
-const ALLOWED_PRODUCTS = ['agent-api', 'search-api', 'embeddings-api'];
+const ALLOWED_PRODUCTS = ['agent-api', 'search-api', 'embeddings-api', 'decisions-api'];
 const ALLOWED_CATEGORIES = [
   'finance', 'people', 'sandbox', 'multimodal', 'rag', 'deep-research',
   'structured-outputs', 'function-calling', 'streaming', 'memory',
@@ -77,7 +77,7 @@ function validateFile(file) {
     errors.push(`products is required; allowed: ${ALLOWED_PRODUCTS.join(', ')}`);
   } else {
     for (const p of fm.products) {
-      if (p === 'sonar-api') errors.push('sonar-api is not accepted; Sonar is deprecated. Use agent-api, search-api, or embeddings-api');
+      if (p === 'sonar-api') errors.push(`sonar-api is not accepted; Sonar is deprecated. Use ${ALLOWED_PRODUCTS.join(', ')}`);
       else if (!ALLOWED_PRODUCTS.includes(p)) errors.push(`unknown product "${p}"; allowed: ${ALLOWED_PRODUCTS.join(', ')}`);
     }
   }
