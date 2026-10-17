@@ -1,12 +1,12 @@
 # Contributing a showcase project
 
-This repo accepts one kind of contribution: a community showcase page for a project you built with the Perplexity Agent API, Search API, or Embeddings API. Merged pages sync to the [cookbook gallery](https://docs.perplexity.ai/docs/cookbook) on docs.perplexity.ai.
+This repo accepts one kind of contribution: a community showcase page for a project you built with the Perplexity Agent API, Search API, Embeddings API, or Decisions API. Merged pages sync to the [cookbook gallery](https://docs.perplexity.ai/docs/cookbook) on docs.perplexity.ai.
 
 Tutorials, guides, and runnable examples are authored in the docs, not here. If you have one of those, open an issue describing it and we will route it.
 
 ## Requirements
 
-- Your project uses the Agent API, Search API, or Embeddings API. Sonar-only projects (`/chat/completions`) are not accepted; Sonar shuts down on 2026-09-27.
+- Your project uses the Agent API, Search API, Embeddings API, or Decisions API. Sonar-only projects (`/chat/completions`) are not accepted.
 - The project has its own public repository or a live URL. The showcase page describes it and links out; it does not host the code.
 - One MDX file at `docs/showcase/<your-project-slug>.mdx`. Lowercase, hyphens, no spaces.
 - Images are either hosted on https URLs you control or committed under `static/showcase/<your-project-slug>/`.
@@ -54,7 +54,7 @@ Your name or handle, and how people can reach you (optional).
 | `title` | yes | Free text, under 60 characters |
 | `description` | yes | One sentence, under 160 characters |
 | `keywords` | yes | 3 to 8 lowercase strings |
-| `products` | yes | One or more of `agent-api`, `search-api`, `embeddings-api` |
+| `products` | yes | One or more of `agent-api`, `search-api`, `embeddings-api`, `decisions-api` |
 | `categories` | no | Any of `finance`, `people`, `sandbox`, `multimodal`, `rag`, `deep-research`, `structured-outputs`, `function-calling`, `streaming`, `memory`, `search-filtering`, `orchestration`, `integrations`, `mcp` |
 
 `products` and `categories` drive the filters in the docs gallery. Pick the ones a developer would use to find your project.
