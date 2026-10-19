@@ -1,6 +1,6 @@
 # Contributing a showcase project
 
-This repo accepts one kind of contribution: a community showcase page for a project you built with the Perplexity Agent API, Search API, Embeddings API, or Decisions API. Merged pages sync to the [cookbook gallery](https://docs.perplexity.ai/docs/cookbook) on docs.perplexity.ai.
+Submit a community showcase page for a project built with the Perplexity Agent API, Search API, Embeddings API, or Decisions API. Maintainers review submissions for the [cookbook gallery](https://docs.perplexity.ai/docs/cookbook).
 
 Tutorials, guides, and runnable examples are authored in the docs, not here. If you have one of those, open an issue describing it and we will route it.
 
@@ -10,13 +10,13 @@ Tutorials, guides, and runnable examples are authored in the docs, not here. If 
 - The project has its own public repository or a live URL. The showcase page describes it and links out; it does not host the code.
 - One MDX file at `docs/showcase/<your-project-slug>.mdx`. Lowercase, hyphens, no spaces.
 - Images are either hosted on https URLs you control or committed under `static/showcase/<your-project-slug>/`.
-- No arbitrary imports, scripts, or embeds. The only iframe allowed is a YouTube embed. Validation rejects anything else.
+- No imports, executable expressions, scripts, or embeds other than a YouTube iframe.
 
 ## Two ways to submit
 
-**Issue form (recommended).** Open a [showcase submission](https://github.com/perplexityai/api-cookbook/issues/new?template=showcase.yml) and fill in the fields. A maintainer turns it into a PR for you. You do not need to write MDX.
+**Issue.** Open an issue with the project URL, a description, and how it uses the API. A maintainer can help prepare the showcase page.
 
-**Direct PR.** Fork the repo, add your MDX file using the template below, open a PR against `main`. CI validates the frontmatter and content rules. A code owner reviews and merges.
+**Direct PR.** Fork the repo, add your MDX file using the template below, and open a PR against `main`.
 
 ## MDX template
 
@@ -67,13 +67,12 @@ Your name or handle, and how people can reach you (optional).
 - Anything that fails validation: bad frontmatter, disallowed imports or embeds, images from http URLs.
 - Duplicate of an existing showcase project.
 
-## Review and sync
+## Review and publication
 
-1. CI runs on your PR: MDX compiles, frontmatter matches the schema, content rules pass.
-2. A code owner (see `.github/CODEOWNERS`) reviews. Expect a first response within a week. If it has been longer, comment on the PR.
-3. On merge, a workflow copies your page into the docs repository and opens a PR there. A docs maintainer merges it and the page goes live within a day.
+1. The submission must pass CI and maintainer review.
+2. After merge, a docs maintainer reviews and publishes the page in the gallery. A merged submission is not yet a published page.
 
-Edits after publication go through the same path: change the file here, open a PR. Do not ask for edits to the docs copy directly; the next sync would overwrite them.
+Submit later edits to the page here so maintainers can carry the changes to the gallery.
 
 ## Questions
 

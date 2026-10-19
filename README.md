@@ -4,17 +4,13 @@ Built something with the [Perplexity Agent API](https://docs.perplexity.ai/docs/
 
 ## What this repo is for
 
-One thing: community showcase projects. You open a PR (or fill in the issue form), a maintainer reviews it, and once it merges the page syncs to the docs site.
+Community showcase projects. Maintainers review submissions before publishing them in the docs gallery.
 
-Tutorials, guides, and runnable examples are written and maintained directly in the docs. They do not live here anymore. If you want to propose one, open an issue and we will point you to the right place.
+Current tutorials, guides, and runnable examples are maintained in the docs. To propose one, open an issue and we will point you to the right place.
 
 ## Submit your project
 
-1. Build your project in its own public repository.
-2. Either
-   - open a [showcase submission issue](https://github.com/perplexityai/api-cookbook/issues/new?template=showcase.yml) and fill in the form, or
-   - fork this repo, add `docs/showcase/your-project.mdx` using the template in [CONTRIBUTING.md](CONTRIBUTING.md), and open a PR.
-3. A maintainer reviews it. Once merged, the page appears on docs.perplexity.ai within a day.
+Follow [CONTRIBUTING.md](CONTRIBUTING.md) to submit a project with a public repository or live URL. Merging a submission and publishing it in the docs gallery are separate steps.
 
 Projects must use the Agent API, Search API, Embeddings API, or Decisions API. The Sonar API (`/chat/completions`) is deprecated and Sonar-only projects are not accepted. If you are still on Sonar, start with the [migration guide](https://docs.perplexity.ai/docs/agent-api/migrate-from-sonar/overview).
 
