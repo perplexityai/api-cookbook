@@ -15,6 +15,7 @@
 import fs from 'fs';
 import path from 'path';
 import { glob } from 'glob';
+import { createProcessor } from '@mdx-js/mdx';
 
 const ALLOWED_PRODUCTS = ['agent-api', 'search-api', 'embeddings-api', 'decisions-api'];
 const ALLOWED_CATEGORIES = [
@@ -89,11 +90,22 @@ function validateFile(file) {
 
   const text = stripCode(body);
 
-  if (/^\s*(import|export)\s/m.test(text)) errors.push('import/export statements are not allowed');
+  try {
+    const nodes = [createProcessor().parse(body)];
+    while (nodes.length) {
+      const node = nodes.pop();
+      if (['mdxjsEsm', 'mdxFlowExpression', 'mdxTextExpression', 'mdxJsxExpressionAttribute', 'mdxJsxAttributeValueExpression'].includes(node.type)) {
+        errors.push('imports, exports, and executable expressions are not allowed');
+      }
+      nodes.push(...(node.children || []), ...(node.attributes || []));
+      if (node.value && typeof node.value === 'object') nodes.push(node.value);
+    }
+  } catch {
+    errors.push('invalid MDX syntax');
+  }
   if (/<\s*(script|style|object|embed|form|input|link|meta|base)\b/i.test(text)) errors.push('script, style, object, embed, form, and similar tags are not allowed');
   if (/\son[a-z]+\s*=/i.test(text)) errors.push('inline event handlers (onClick, onLoad, ...) are not allowed');
   if (/javascript:/i.test(text)) errors.push('javascript: URLs are not allowed');
-  if (/\{[^}\n]*\}/.test(text.replace(/!\[[^\]]*\]\([^)]*\)/g, ''))) errors.push('JSX expressions in braces are not allowed');
   if (/http:\/\//.test(text)) errors.push('http:// URLs are not allowed; use https');
 
   for (const tag of text.matchAll(/<\s*\/?\s*([A-Za-z][\w.-]*)/g)) {

@@ -8,7 +8,7 @@ import { test } from 'node:test';
 
 const scripts = path.dirname(fileURLToPath(import.meta.url));
 
-test('Decisions submissions generate a page that passes the content gate', () => {
+test('generated pages accept supported products and reject executable MDX', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'showcase-products-'));
   try {
     const issue = [
@@ -40,6 +40,15 @@ test('Decisions submissions generate a page that passes the content gate', () =>
       assert.notEqual(rejected.status, 0);
       assert.match(rejected.stderr, new RegExp(product));
     }
+    for (const expression of ['{\nMath.max(1, 2)\n}', '<Note title={\nMath.max(1, 2)\n}>Text</Note>', '<Note {...{title: "Text"}}>Text</Note>', 'export const value = 1']) {
+      fs.writeFileSync(file, `${source}\n${expression}\n`);
+      const rejected = validate();
+      assert.notEqual(rejected.status, 0);
+      assert.match(rejected.stderr, /executable expressions/);
+    }
+    fs.writeFileSync(file, `${source}\n\`{example}\`\n\n\`\`\`js\n{\nMath.max(1, 2)\n}\n\`\`\`\n`);
+    const codeExample = validate();
+    assert.equal(codeExample.status, 0, codeExample.stdout + codeExample.stderr);
   } finally {
     fs.rmSync(directory, { recursive: true, force: true });
   }
