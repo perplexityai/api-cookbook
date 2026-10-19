@@ -1,0 +1,170 @@
+name: Sync showcase to docs
+
+# Copies community showcase pages from this repo into ppl-ai/api-docs and
+# opens (or refreshes) a draft PR there. Add-only: files are created or
+# overwritten, never deleted. Removing a page takes a PR in each repo.
+#
+# Runs only after a maintainer merged to main. Never on pull_request or
+# pull_request_target, so fork PRs can never reach the docs token.
+#
+# Required configuration:
+#   repository variable  DOCS_SYNC_APP_ID
+#   repository secret    DOCS_SYNC_APP_PRIVATE_KEY
+# for a GitHub App installed on ppl-ai/api-docs with contents: write and
+# pull_requests: write.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/showcase/**'
+      - 'static/showcase/**'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Push to sync/showcase-dry-run and open no PR
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-showcase
+  cancel-in-progress: false
+
+env:
+  DOCS_REPO: ppl-ai/api-docs
+  SYNC_BRANCH: ${{ inputs.dry_run && 'sync/showcase-dry-run' || 'sync/showcase' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout api-cookbook
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: cookbook
+
+      - name: Skip when there is nothing to sync
+        id: content
+        run: |
+          count=$(find cookbook/docs/showcase -name '*.mdx' 2>/dev/null | wc -l)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "$count showcase page(s) in this repo"
+
+      - name: Mint docs token
+        if: steps.content.outputs.count != '0'
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.DOCS_SYNC_APP_ID }}
+          private-key: ${{ secrets.DOCS_SYNC_APP_PRIVATE_KEY }}
+          owner: ppl-ai
+          repositories: api-docs
+
+      - name: Checkout api-docs (full history)
+        if: steps.content.outputs.count != '0'
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ env.DOCS_REPO }}
+          token: ${{ steps.app.outputs.token }}
+          path: docs
+          ref: main
+          # generate-cookbook-data derives dates with `git log --follow`.
+          # A shallow clone produces wrong dates and the docs CI check fails.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        if: steps.content.outputs.count != '0'
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 10.32.1
+
+      - name: Setup Node.js
+        if: steps.content.outputs.count != '0'
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - name: Copy showcase content (add or overwrite, never delete)
+        if: steps.content.outputs.count != '0'
+        id: copy
+        run: |
+          set -euo pipefail
+          mkdir -p docs/docs/cookbook/showcase
+          cp cookbook/docs/showcase/*.mdx docs/docs/cookbook/showcase/
+          if [ -d cookbook/static/showcase ]; then
+            mkdir -p docs/docs/cookbook/static/showcase
+            cp -R cookbook/static/showcase/. docs/docs/cookbook/static/showcase/
+            rm -f docs/docs/cookbook/static/showcase/.gitkeep
+          fi
+          cd docs
+          git config user.name "perplexity-docs-sync[bot]"
+          git config user.email "docs-sync@perplexity.ai"
+          git checkout -B "$SYNC_BRANCH"
+          git add docs/cookbook/showcase
+          [ -d docs/cookbook/static/showcase ] && git add docs/cookbook/static/showcase
+          if git diff --staged --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Docs already match the showcase content."
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          # Commit content first. generate-cookbook-data reads dates from git,
+          # and returns null for files that are not yet committed.
+          git commit -m "Sync community showcase from perplexityai/api-cookbook@${GITHUB_SHA::7}
+
+          Source: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}"
+
+      - name: Regenerate cookbook navigation and gallery data
+        if: steps.copy.outputs.changed == 'true'
+        working-directory: docs
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm run sync-cookbook
+          pnpm run check-cookbook-data
+          git add config/navigation.json snippets/cookbookData.jsx
+          if ! git diff --staged --quiet; then
+            git commit -m "Regenerate cookbook nav and gallery data"
+          fi
+
+      - name: Push sync branch
+        if: steps.copy.outputs.changed == 'true'
+        working-directory: docs
+        run: git push --force-with-lease origin "$SYNC_BRANCH"
+
+      - name: Open or refresh draft PR
+        if: steps.copy.outputs.changed == 'true' && !inputs.dry_run
+        working-directory: docs
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          body="Community showcase pages synced from perplexityai/api-cookbook@${GITHUB_SHA::7}.
+
+          Source commit: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+
+          Add-only sync: files were created or overwritten, none deleted. Merge with **rebase**, not squash, so the gallery date (git author date) survives and \`check-cookbook-data\` stays green on main.
+
+          Do not edit these files here; edit them in api-cookbook and the next sync will carry the change."
+          existing=$(gh pr list --repo "$DOCS_REPO" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --repo "$DOCS_REPO" --body "$body"
+            echo "Refreshed PR #$existing"
+          else
+            gh pr create --repo "$DOCS_REPO" --draft --base main --head "$SYNC_BRANCH" \
+              --title "Sync community showcase from api-cookbook@${GITHUB_SHA::7}" \
+              --body "$body"
+          fi
+
+      - name: Dry run summary
+        if: steps.copy.outputs.changed == 'true' && inputs.dry_run
+        working-directory: docs
+        run: |
+          echo "Dry run: pushed $SYNC_BRANCH to $DOCS_REPO, no PR opened."
+          git log --oneline main.."$SYNC_BRANCH"
+          git diff --stat main.."$SYNC_BRANCH"

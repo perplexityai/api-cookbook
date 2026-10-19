@@ -5,6 +5,8 @@ on:
     branches: [ main ]
     paths:
       - 'docs/**'
+      - 'static/**'
+      - 'scripts/**'
       - '.github/workflows/**'
 
 jobs:
@@ -25,6 +27,9 @@ jobs:
         
       - name: Validate MDX files
         run: node scripts/validate-mdx.js
+
+      - name: Validate showcase pages
+        run: node scripts/validate-showcase.js
           
       - name: Check for broken links
         run: |
