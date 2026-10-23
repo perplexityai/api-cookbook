@@ -1,0 +1,6 @@
+# Community showcase pages need a code owner review before merge.
+/docs/showcase/    @andrewmadson-pplx @gleb-reshetnev
+/static/showcase/  @andrewmadson-pplx @gleb-reshetnev
+# Workflow and validation changes.
+/.github/          @andrewmadson-pplx @gleb-reshetnev
+/scripts/          @andrewmadson-pplx @gleb-reshetnev
