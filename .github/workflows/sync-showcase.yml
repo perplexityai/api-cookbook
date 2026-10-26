@@ -45,6 +45,7 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           path: cookbook
+          persist-credentials: false
 
       - name: Skip when there is nothing to sync
         id: content
@@ -62,6 +63,8 @@ jobs:
           private-key: ${{ secrets.DOCS_SYNC_APP_PRIVATE_KEY }}
           owner: ppl-ai
           repositories: api-docs
+          permission-contents: write
+          permission-pull-requests: write
 
       - name: Checkout api-docs (full history)
         if: steps.content.outputs.count != '0'

@@ -41,6 +41,7 @@ jobs:
       # Optional: a GitHub App token lets this job open PRs even when the org
       # blocks GITHUB_TOKEN from creating pull requests. Set the repository
       # variable SHOWCASE_APP_ID and secret SHOWCASE_APP_PRIVATE_KEY to enable.
+      # The App needs issues: write and pull_requests: write on this repo.
       - name: Mint app token
         id: app
         if: vars.SHOWCASE_APP_ID != ''
@@ -48,6 +49,8 @@ jobs:
         with:
           app-id: ${{ vars.SHOWCASE_APP_ID }}
           private-key: ${{ secrets.SHOWCASE_APP_PRIVATE_KEY }}
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Generate showcase page from issue
         id: gen
@@ -59,8 +62,10 @@ jobs:
           echo "slug=$(basename "$file" .mdx)" >> "$GITHUB_OUTPUT"
 
       - name: Validate
+        env:
+          FILE: ${{ steps.gen.outputs.file }}
         run: |
-          node scripts/validate-showcase.js "${{ steps.gen.outputs.file }}"
+          node scripts/validate-showcase.js "$FILE"
           node scripts/validate-mdx.js
 
       - name: Open pull request
