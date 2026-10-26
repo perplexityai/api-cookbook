@@ -87,11 +87,11 @@ jobs:
               --title "Add showcase: ${SLUG}" \
               --body "Generated from #${ISSUE} (submitted by @${AUTHOR}).
 
-          Review the page, edit on this branch if needed, then mark ready and merge. Merging syncs the page to docs.perplexity.ai.
+          Review the page, edit on this branch if needed, then mark ready and merge. Merging opens a draft PR in ppl-ai/api-docs that publishes the page after review.
 
           Closes #${ISSUE}"
           fi
-          gh issue comment "$ISSUE" --body "Thanks @${AUTHOR}. A maintainer approved this submission and a pull request was opened from it: $(gh pr list --head "$branch" --state open --json url --jq '.[0].url'). Once it merges, the page appears on docs.perplexity.ai within a day."
+          gh issue comment "$ISSUE" --body "Thanks @${AUTHOR}. A maintainer approved this submission and a pull request was opened from it: $(gh pr list --head "$branch" --state open --json url --jq '.[0].url'). Once it merges, the page goes through docs review before it appears on docs.perplexity.ai."
 
       - name: Report failure on the issue
         if: failure()
