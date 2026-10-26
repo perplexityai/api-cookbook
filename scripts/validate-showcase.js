@@ -105,7 +105,7 @@ function validateFile(file) {
   }
   if (/<\s*(script|style|object|embed|form|input|link|meta|base)\b/i.test(text)) errors.push('script, style, object, embed, form, and similar tags are not allowed');
   if (/\son[a-z]+\s*=/i.test(text)) errors.push('inline event handlers (onClick, onLoad, ...) are not allowed');
-  if (/javascript:/i.test(text)) errors.push('javascript: URLs are not allowed');
+  if (/javascript:/i.test(text) || /(\]\(|\]:|=)\s*["']?\s*(vbscript|data):/i.test(text)) errors.push('javascript:, vbscript:, and data: URLs are not allowed');
   if (/http:\/\//.test(text)) errors.push('http:// URLs are not allowed; use https');
 
   for (const tag of text.matchAll(/<\s*\/?\s*([A-Za-z][\w.-]*)/g)) {

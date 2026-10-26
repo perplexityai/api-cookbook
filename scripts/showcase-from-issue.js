@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Turns a "Submit a showcase project" issue (GitHub issue form) into
 // docs/showcase/<slug>.mdx. Free-text fields are treated as plain Markdown:
-// HTML tags, JSX braces, import/export lines, and code blocks are removed.
+// HTML tags are escaped, links must use https, and JSX braces, import/export
+// lines, and code blocks are removed.
 // The result still goes through scripts/validate-showcase.js before a PR opens.
 //
 // Usage: ISSUE_BODY="$(gh issue view N --json body -q .body)" node scripts/showcase-from-issue.js
@@ -31,11 +32,11 @@ function sanitizeText(s) {
   return s
     .replace(/```[\s\S]*?```/g, '')           // fenced code
     .replace(/^\s*(import|export)\s.*$/gm, '') // module lines
-    .replace(/<[^>]*>/g, '')                   // any tag
     .replace(/[{}]/g, '')                      // JSX expressions
-    .replace(/javascript:/gi, '')
     .replace(/\]\(http:\/\//g, '](https://')   // upgrade plain http links
-    .replace(/[<>]/g, (c) => (c === '<' ? '&lt;' : '&gt;'))
+    .replace(/\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)/g, (link, text, url) => (url.startsWith('https://') ? link : text))
+    .replace(/^\s*\[[^\]]+\]:(?!\s*https:\/\/).*$/gm, '') // non-https link definitions
+    .replace(/[<>]/g, (c) => (c === '<' ? '&lt;' : '&gt;')) // HTML and JSX tags
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }

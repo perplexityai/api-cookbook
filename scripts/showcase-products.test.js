@@ -19,7 +19,7 @@ test('generated pages accept supported products and reject executable MDX', () =
       ['Which Perplexity APIs does it use?', 'decisions-api'],
       ['Categories (pick up to 3)', 'integrations'],
       ['Keywords', 'decisions, choices, comparison'],
-      ['What does it do?', 'This project helps a reader compare a fixed set of choices and inspect the resulting recommendation. It presents the alternatives with enough context to understand the outcome and keeps the original question visible beside the result.'],
+      ['What does it do?', '<<script>script>alert(1)<</script>/script> [a](javajavascript:script:alert(1)) [b](data:text/html,x) [c](VBScript:x)\n\n[d]: data:text/html,x\n\nThis project helps a reader compare a fixed set of choices and inspect the resulting recommendation. It presents the alternatives with enough context to understand the outcome and keeps the original question visible beside the result.'],
       ['How does it use the Perplexity API?', 'The project sends its alternatives to the Decisions API and displays the returned decision. It handles unsuccessful requests and lets the reader review the recommendation before acting on it.'],
     ].map(([label, value]) => `### ${label}\n\n${value}`).join('\n\n');
     const generated = spawnSync(process.execPath, [path.join(scripts, 'showcase-from-issue.js')], {
@@ -32,6 +32,7 @@ test('generated pages accept supported products and reject executable MDX', () =
     });
     const source = fs.readFileSync(file, 'utf8');
     assert.match(source, /products: \[decisions-api\]/);
+    assert.doesNotMatch(source, /<script|javascript:|data:|vbscript:/i);
     const accepted = validate();
     assert.equal(accepted.status, 0, accepted.stdout + accepted.stderr);
     for (const product of ['sonar-api', 'unknown-api']) {
@@ -45,6 +46,12 @@ test('generated pages accept supported products and reject executable MDX', () =
       const rejected = validate();
       assert.notEqual(rejected.status, 0);
       assert.match(rejected.stderr, /executable expressions/);
+    }
+    for (const link of ['[demo](data:text/html,x)', '<a href="vbscript:x">demo</a>']) {
+      fs.writeFileSync(file, `${source}\n${link}\n`);
+      const rejected = validate();
+      assert.notEqual(rejected.status, 0);
+      assert.match(rejected.stderr, /data: URLs/);
     }
     fs.writeFileSync(file, `${source}\n\`{example}\`\n\n\`\`\`js\n{\nMath.max(1, 2)\n}\n\`\`\`\n`);
     const codeExample = validate();
