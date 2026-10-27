@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-label="Disease Information App screenshot placeholder">
+  <rect width="800" height="450" fill="#0f172a"/>
+  <rect x="40" y="40" width="720" height="370" rx="16" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+  <text x="400" y="210" fill="#e2e8f0" font-family="system-ui, sans-serif" font-size="28" text-anchor="middle">Disease Q&amp;A Tutorial App</text>
+  <text x="400" y="250" fill="#94a3b8" font-family="system-ui, sans-serif" font-size="16" text-anchor="middle">Perplexity API cookbook example</text>
+</svg>
