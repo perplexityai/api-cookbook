@@ -1,0 +1,265 @@
+---
+title: "Build an incident agent with operator decisions"
+sidebarTitle: "Incident decision agent"
+description: "Investigate synthetic incident evidence, persist a rollback proposal, and resume after an explicit operator decision."
+products: [agent-api]
+categories: [function-calling, orchestration, memory]
+---
+
+Build a Python incident assistant that reads evidence, recalls resolved incidents, and requests an operator's decision.
+The decision can survive a process restart because your application stores the proposal and transcript locally.
+
+This example never deploys or rolls back a service.
+An approval records consent and returns `executed: false`.
+The bundled alert is synthetic, not a production incident.
+
+[View the runnable source](https://github.com/perplexityai/api-cookbook/blob/main/docs/examples/agent-api-workflows/sre_agent.py).
+
+## Prerequisites
+
+Use Python 3.12 or later and a [Perplexity API key](https://console.perplexity.ai).
+Requests incur API usage charges.
+The examples use `openai/gpt-5.6-sol`; set `AGENT_MODEL` to choose another compatible model in the Python apps.
+
+Clone the source and install its pinned dependencies:
+
+```bash
+git clone https://github.com/perplexityai/api-cookbook.git
+cd api-cookbook/docs/examples/agent-api-workflows
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+export PERPLEXITY_API_KEY="YOUR_API_KEY"
+```
+
+## Investigate the sample alert
+
+```bash
+python sre_agent.py --alert sample_alert.json
+```
+
+The alert includes a service, current and previous versions, timestamped evidence IDs, and a runbook.
+In the synthetic scenario, checkout errors rise after a deployment that reduces a Redis connection pool.
+The agent reads that evidence through `get_service_evidence` and searches saved reports with `recall_incidents`.
+
+If the model proposes a rollback, the JSON result contains:
+
+- `status: "awaiting_decision"`.
+- A `pending` list of `propose_rollback` calls.
+- A `call_id` and JSON-encoded `arguments` for each proposal.
+
+Inspect the proposed service, target version, reason, and cited evidence before deciding.
+The host rejects a service or version that does not match this incident.
+The model may instead finish with `status: "reviewed"`; the host does not invent a proposal when no call was returned.
+
+Submitting the same alert fingerprint again returns its saved record without starting another investigation.
+Use a distinct fingerprint for a distinct incident.
+
+## Approve or deny the exact proposal
+
+Copy a `call_id` from `pending`.
+Run one of the following commands, not both for the same call:
+
+```bash
+python sre_agent.py --decision approve \
+  --incident checkout-demo-2026-09-18 \
+  --call-id 'CALL_ID_FROM_PENDING'
+```
+
+```bash
+python sre_agent.py --decision deny \
+  --incident checkout-demo-2026-09-18 \
+  --call-id 'CALL_ID_FROM_PENDING'
+```
+
+Each command opens the saved state in a new process.
+The host verifies the incident and pending call, records the exact proposal and decision, and adds a matching `function_call_output`.
+After all pending proposals have decisions, it resumes the model with the complete transcript.
+
+A recorded decision has this shape:
+
+```json
+{
+  "decision": "approved",
+  "executed": false
+}
+```
+
+Repeated decisions and unknown call IDs fail.
+The operator cannot change the stored proposal's arguments through the decision command.
+This is an application-controlled custom-function workflow, not a hosted MCP approval policy.
+It does not require a `require_approval` API parameter.
+
+## Resume or close an incident
+
+If an API request fails during investigation or after the decision was saved, resume from its checkpoint:
+
+```bash
+python sre_agent.py --resume checkout-demo-2026-09-18
+```
+
+Resume accepts only interrupted investigations or decisions waiting for model continuation.
+An incident waiting for approval still needs a decision.
+The example does not reconnect to an API request that was active when the process stopped.
+
+After the operator has independently confirmed resolution, save the report:
+
+```bash
+python sre_agent.py --resolve checkout-demo-2026-09-18
+```
+
+This marks the local record resolved and makes its report available to later investigations.
+It does not verify service health or perform mitigation.
+A resolved incident cannot accept an old pending decision.
+
+## Inspect the API request
+
+This standalone request asks for a custom function call.
+It does not execute the function or run the complete application.
+Inspect the `function_call` item in `output`, including its `name`, `arguments`, and `call_id`.
+The linked Python app implements the host-side validation and continuation.
+
+Install `perplexityai` for Python, `@perplexity-ai/perplexity_ai` for TypeScript, or `curl` and `jq` for cURL.
+All three examples read `PERPLEXITY_API_KEY`.
+
+<CodeGroup>
+
+```python Python
+from perplexity import Perplexity
+
+client = Perplexity()
+response = client.responses.create(
+    model="openai/gpt-5.6-sol",
+    input="Synthetic example: call propose_rollback for checkout-api, target_version 2026.09.18.1, reason Synthetic deploy-1 changed pool size before errors rose. Do not execute a deployment.",
+    max_output_tokens=800,
+    tools=[{
+        "type": "function",
+        "name": "propose_rollback",
+        "description": "Record a proposal for an operator decision. Never execute a deployment.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service": {
+                    "type": "string"
+                },
+                "target_version": {
+                    "type": "string"
+                },
+                "reason": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "service",
+                "target_version",
+                "reason"
+            ],
+            "additionalProperties": False
+        },
+        "strict": True
+    }],
+)
+print(response.model_dump_json(indent=2))
+```
+
+```typescript Typescript
+import Perplexity from "@perplexity-ai/perplexity_ai";
+
+const client = new Perplexity();
+const response = await client.responses.create({
+  "model": "openai/gpt-5.6-sol",
+  "input": "Synthetic example: call propose_rollback for checkout-api, target_version 2026.09.18.1, reason Synthetic deploy-1 changed pool size before errors rose. Do not execute a deployment.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "propose_rollback",
+      "description": "Record a proposal for an operator decision. Never execute a deployment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "target_version": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "target_version",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+});
+console.log(JSON.stringify(response, null, 2));
+```
+
+```bash cURL
+curl --fail-with-body https://api.perplexity.ai/v1/agent \
+  -H "Authorization: Bearer $PERPLEXITY_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "model": "openai/gpt-5.6-sol",
+  "input": "Synthetic example: call propose_rollback for checkout-api, target_version 2026.09.18.1, reason Synthetic deploy-1 changed pool size before errors rose. Do not execute a deployment.",
+  "max_output_tokens": 800,
+  "tools": [
+    {
+      "type": "function",
+      "name": "propose_rollback",
+      "description": "Record a proposal for an operator decision. Never execute a deployment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string"
+          },
+          "target_version": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "service",
+          "target_version",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ]
+}' | jq
+```
+
+</CodeGroup>
+
+## Verify and extend
+
+```bash
+python -m unittest -v test_workflows
+python smoke_live.py
+```
+
+The unit checks cover duplicate alerts, persisted approve/deny flows, mismatched proposals, repeated decisions, and stale decisions after resolution.
+The live smoke check runs both decision paths against the Agent API with synthetic evidence.
+It makes no deployment calls and uses no production monitoring credentials.
+
+Treat the local OS user as the operator.
+Run one process at a time against the state file; this example has no multi-operator authentication or concurrent decision protocol.
+State includes model-visible evidence and should follow your incident-data retention policy.
+
+For real monitoring, replace the alert-file input with an authenticated, validated event source.
+For Slack buttons or an approval web UI, authenticate the operator, authorize access to the incident, and make decision recording atomic before any action.
+Do not turn approval into deployment execution without a separately scoped executor, idempotency, an audit trail, and post-action verification.
+
+Continue with [custom functions](/docs/agent-api/tools/custom-functions) or the [channel-scoped Slack agent](/docs/cookbook/examples/agent-api-workflows/slack-bot).

@@ -1,0 +1,13 @@
+{
+  "fingerprint": "checkout-demo-2026-09-18",
+  "service": "checkout-api",
+  "source": "Bundled synthetic evidence. Not a production incident.",
+  "current_version": "2026.09.18.2",
+  "previous_version": "2026.09.18.1",
+  "evidence": [
+    {"id": "metric-1", "time": "2026-09-18T09:00:00Z", "detail": "Checkout error rate was 0.2% before deployment and 18.7% after deployment."},
+    {"id": "deploy-1", "time": "2026-09-18T08:58:00Z", "detail": "Version 2026.09.18.2 changed the Redis connection pool size from 64 to 8."},
+    {"id": "log-1", "time": "2026-09-18T09:01:00Z", "detail": "Checkout requests reported Redis pool acquisition timeouts; 143 requests were waiting."}
+  ],
+  "runbook": "Correlate errors with the deployment. Consider reverting the pool-size change. A human must decide. Verify error rate and pool wait time after any real mitigation. This example never performs a deployment."
+}
