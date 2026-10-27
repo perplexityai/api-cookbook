@@ -98,12 +98,14 @@ class FactChecker:
             print(f"Warning: Prompt file not found at {prompt_file}", file=sys.stderr)
         except Exception as e:
             print(f"Warning: Could not load system prompt from {prompt_file}: {e}", file=sys.stderr)
-            print("Using default system prompt.", file=sys.stderr)
-            return (
-                "You are a professional fact-checker with extensive research capabilities. "
-                "Your task is to evaluate claims or articles for factual accuracy. "
-                "Focus on identifying false, misleading, or unsubstantiated claims."
-            )
+
+        # Fallback default prompt if file loading fails
+        print("Using default system prompt.", file=sys.stderr)
+        return (
+            "You are a professional fact-checker with extensive research capabilities. "
+            "Your task is to evaluate claims or articles for factual accuracy. "
+            "Focus on identifying false, misleading, or unsubstantiated claims."
+        )
 
     def check_claim(self, text: str, model: str = DEFAULT_MODEL, use_structured_output: bool = False) -> Dict[str, Any]:
         """
